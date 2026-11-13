@@ -4,16 +4,29 @@ import { supabase } from "@/api/base44Client";
 
 export default function Login() {
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [sent, setSent] = useState(false);
 
+  // Supabase emails a one-time sign-in link. The browser then stays signed in,
+  // so this is needed once per device.
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
     setError("");
-    const { error: failure } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    if (failure) setError("ההתחברות נכשלה. בדוק את האימייל והסיסמה.");
+    const { error: failure } = await supabase.auth.signInWithOtp({
+      email: email.trim(),
+      options: { emailRedirectTo: window.location.origin },
+    });
+    if (failure) {
+      setError(
+        failure.status === 429
+          ? "נשלחו יותר מדי בקשות. נסה שוב בעוד כמה דקות."
+          : "לא ניתן לשלוח קישור לכתובת הזו."
+      );
+    } else {
+      setSent(true);
+    }
     setBusy(false);
   };
 
@@ -32,21 +45,31 @@ export default function Login() {
             <p className="text-xs text-muted-foreground font-mono">אתר פרטי · התחבר כדי להמשיך</p>
           </div>
         </div>
-        <div className="space-y-1.5">
-          <label htmlFor="email" className="text-xs font-mono uppercase tracking-wider text-muted-foreground">אימייל</label>
-          <input id="email" type="email" required autoComplete="email" dir="ltr" value={email}
-            onChange={(e) => setEmail(e.target.value)} className={inputCls} />
-        </div>
-        <div className="space-y-1.5">
-          <label htmlFor="password" className="text-xs font-mono uppercase tracking-wider text-muted-foreground">סיסמה</label>
-          <input id="password" type="password" required autoComplete="current-password" dir="ltr" value={password}
-            onChange={(e) => setPassword(e.target.value)} className={inputCls} />
-        </div>
-        {error && <p className="text-xs font-mono text-red-400">{error}</p>}
-        <button type="submit" disabled={busy}
-          className="w-full h-10 rounded-md bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground text-xs font-mono font-semibold uppercase tracking-wider flex items-center justify-center gap-2 transition-colors">
-          {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />} התחבר
-        </button>
+
+        {sent ? (
+          <div className="space-y-3">
+            <p className="text-sm text-foreground leading-relaxed">
+              שלחנו קישור כניסה אל <span dir="ltr" className="font-mono">{email.trim()}</span>. פתח את המייל ולחץ על הקישור.
+            </p>
+            <button type="button" onClick={() => setSent(false)}
+              className="text-[11px] font-mono text-muted-foreground hover:text-foreground transition-colors">
+              שלח שוב או החלף כתובת
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-1.5">
+              <label htmlFor="email" className="text-xs font-mono uppercase tracking-wider text-muted-foreground">אימייל</label>
+              <input id="email" type="email" required autoComplete="email" dir="ltr" value={email}
+                onChange={(e) => setEmail(e.target.value)} className={inputCls} />
+            </div>
+            {error && <p className="text-xs font-mono text-red-400">{error}</p>}
+            <button type="submit" disabled={busy}
+              className="w-full h-10 rounded-md bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground text-xs font-mono font-semibold uppercase tracking-wider flex items-center justify-center gap-2 transition-colors">
+              {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />} שלח לי קישור כניסה
+            </button>
+          </>
+        )}
       </form>
     </div>
   );
