@@ -5,7 +5,7 @@ import "leaflet/dist/leaflet.css";
 import "leaflet-draw/dist/leaflet.draw.css";
 import "leaflet-draw";
 import { format } from "date-fns";
-import { Satellite, Map, Globe, Moon, Mountain, Maximize2, Minimize2 } from "lucide-react";
+import { Satellite, Map, Globe, Maximize2, Minimize2 } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import { useToast } from "@/components/ui/use-toast";
 import { ShapeSaveDialog, ShapeEditDialog } from "./ShapeDialog";
@@ -477,8 +477,6 @@ export default function ThreatMap({
             { id: "street",       label: "MAP",    icon: <Map className="w-3 h-3" /> },
             { id: "esri_street",  label: "STREET", icon: <Globe className="w-3 h-3" /> },
             { id: "hybrid",       label: "HYBRID", icon: <Satellite className="w-3 h-3" /> },
-            { id: "topo",         label: "TOPO",   icon: <Mountain className="w-3 h-3" /> },
-            { id: "dark",         label: "DARK",   icon: <Moon className="w-3 h-3" /> },
           ].map(({ id, label, icon }) => (
             <button key={id}
               onClick={() => setTileMode(id)}
@@ -539,17 +537,6 @@ export default function ThreatMap({
         {tileMode === "hybrid" && (
           <TileLayer key="hybrid_labels"
             url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" />
-        )}
-        {tileMode === "topo" && (
-          <TileLayer key="topo"
-            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}"
-            attribution="Tiles &copy; Esri" />
-        )}
-        {tileMode === "dark" && (
-          <TileLayer key="dark"
-            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-            subdomains="abcd"
-            attribution='&copy; <a href="https://openstreetmap.org">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>' />
         )}
 
         {focusCoords && <MapRecenter center={[focusCoords.lat, focusCoords.lng]} zoom={14} />}
