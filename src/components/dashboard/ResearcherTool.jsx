@@ -66,8 +66,8 @@ function knownPlaces(ctx) {
 
 const placeLine = (address) => (address ? [address.district, address.region, address.country].filter(Boolean).join(", ") : "");
 
-// The few things most worth a dedicated web search: known security sites
-// first, then security-related articles, then the main settlements.
+// The few things most worth a dedicated web search: known security sites and
+// security-related articles; the main settlements only when there are none.
 function pickTargets(ctx, mapNames) {
   const targets = [];
   const seen = new Set();
@@ -81,7 +81,11 @@ function pickTargets(ctx, mapNames) {
   ctx.sites.forEach((x) => add(x.nameEn || x.name, [x.type, x.description, x.affiliation && `operated by ${x.affiliation}`, x.nameEn && x.name !== x.nameEn && `also written ${x.name}`].filter(Boolean).join("; ")));
   ctx.features.filter((f) => f.kind !== "place" && (f.name || f.nameEn)).forEach((f) => add(f.nameEn || f.name, `${f.kindLabel}${f.name && f.nameEn && f.name !== f.nameEn ? `; local name ${f.name}` : ""}`));
   ctx.wikipedia.filter((w) => w.security).forEach((w) => add(w.title, w.description));
-  knownPlaces(ctx).filter((f) => f.kind === "place").forEach((f) => add(f.nameEn || f.name, `settlement${f.name && f.nameEn && f.name !== f.nameEn ? `; local name ${f.name}` : ""}`));
+  // Ordinary settlements get their own search only when the area has no security
+  // site: next to one, the area-wide search already asks about them together.
+  if (targets.length === 0) {
+    knownPlaces(ctx).filter((f) => f.kind === "place").forEach((f) => add(f.nameEn || f.name, `settlement${f.name && f.nameEn && f.name !== f.nameEn ? `; local name ${f.name}` : ""}`));
+  }
   mapNames.forEach((n) => add(n, "label printed on the map"));
   return targets;
 }
