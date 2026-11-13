@@ -7,28 +7,12 @@ import { useToast } from "@/components/ui/use-toast";
 import { gatherAreaContext, normalizeBox } from "@/lib/areaContext";
 import { renderMapTextImage } from "@/lib/mapTextImage";
 
-// What the researcher reports about the identified place: its name, who it is
-// tied to, background, key events and other relevant facts.
+// What the researcher reports: the identified place and a short summary of it.
 const SCHEMA = {
   type: "object",
   properties: {
     area_name: { type: "string" },
-    affiliation: { type: "string" },
-    background: { type: "string" },
-    events: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: { date: { type: "string" }, event: { type: "string" } }
-      }
-    },
-    facts: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: { label: { type: "string" }, value: { type: "string" } }
-      }
-    },
+    summary: { type: "string" },
     source_urls: { type: "array", items: { type: "string" } }
   }
 };
@@ -98,7 +82,7 @@ function pickTargets(ctx, mapNames) {
   const seen = new Set();
   const add = (name, known, aliases = []) => {
     const key = norm(name);
-    if (!key || seen.has(key) || targets.length >= 3) return;
+    if (!key || seen.has(key) || targets.length >= 2) return;
     [key, ...aliases.map(norm)].forEach((k) => k && seen.add(k));
     targets.push({ name: name.trim(), known });
   };
@@ -114,7 +98,7 @@ function pickTargets(ctx, mapNames) {
   ];
   // A known security site that none of the top labels names keeps one search slot.
   const uncoveredSite = siteNames.some((x) => ![x.name, ...x.aliases].some((n) => labels.slice(0, 3).some((l) => sameName(l.name, n))));
-  const labelSlots = uncoveredSite ? 2 : 3;
+  const labelSlots = uncoveredSite ? 1 : 2;
 
   labels.slice(0, labelSlots).forEach((l) => {
     // A label the map data knows is searched by its English name, which finds
@@ -140,12 +124,10 @@ Coordinates: ${ctx.center.lat.toFixed(4)}, ${ctx.center.lng.toFixed(4)}${ctx.dia
 Administrative area: ${placeLine(ctx.address) || "unknown"}
 Known from map data: ${target.known || "nothing further"}
 
-First confirm that sources describe the place at these coordinates, not another place with the same name. Then answer briefly, in dated bullet points:
-1. What the place is.
-2. Who it is tied to now: who controls, operates or is identified with it (state, army branch, armed group, community, international force), and any change with its date.
-3. Background: its history and military or security role.
-4. Key events there (strikes, attacks, clashes, takeovers, security incidents), each with its date, most recent first.
-5. Other relevant facts: forces or units present, notable infrastructure, sanctions, casualties.
+First confirm that sources describe the place at these coordinates, not another place with the same name. Then answer in at most 6 short bullet points:
+- What the place is, and its military or security role.
+- Who it is tied to now (who controls, operates or is identified with it), and any change with its date.
+- The one or two most significant events there, with dates.
 
 Report only what sources state about this specific location. If you find nothing specific to it, answer exactly: No specific information found.`;
 }
@@ -155,10 +137,10 @@ function overviewQuery(ctx) {
   const places = knownPlaces(ctx).filter((f) => f.kind === "place").map((f) => f.nameEn || f.name).filter(Boolean).slice(0, 6);
   return `Today is ${today}. Security situation in this specific small area: ${places.length ? places.join(", ") + " - " : ""}${placeLine(ctx.address) || `around ${ctx.center.lat.toFixed(3)}, ${ctx.center.lng.toFixed(3)}`}.
 
-Answer briefly in dated bullet points:
-1. Who controls this area now (state forces, armed groups, international forces), and any change of control with the date.
-2. Military or security sites located in it.
-3. Strikes, clashes or security incidents in these specific places during the last two years, each with its date and the exact place, most recent first.
+Answer in at most 5 short bullet points:
+- Who controls this area now, and any change of control with its date.
+- Military or security sites in it.
+- The one or two most significant security events there recently, with dates.
 
 Only these places, not the wider country or region. If nothing specific is found, answer exactly: No specific information found.`;
 }
@@ -174,7 +156,7 @@ function synthesisPrompt(ctx, mapNames, own, research, allowedUrls) {
   const findings = research.map((r) => `### ${r.subject}\n${r.text}`);
 
   return `אתה חוקר מודיעין גלוי (OSINT). התאריך היום: ${new Date().toISOString().slice(0, 10)}.
-לפניך כל החומר שנאסף על שטח שסומן במפה. זהה ממנו את המקום, וכתוב עליו סיכום מודיעיני קצר. אל תוסיף שום דבר שאינו בחומר.
+לפניך כל החומר שנאסף על שטח שסומן במפה. זהה ממנו את המקום וכתוב עליו סיכום קצר. אל תוסיף שום דבר שאינו בחומר.
 
 ## השטח
 ${ctx.diagonalKm < 0.2 ? `נקודה: ${ctx.center.lat.toFixed(5)}, ${ctx.center.lng.toFixed(5)}` : `מלבן של ${fmtKm(ctx.widthKm)} על ${fmtKm(ctx.heightKm)}, מרכזו ${ctx.center.lat.toFixed(5)}, ${ctx.center.lng.toFixed(5)}`}
@@ -203,20 +185,17 @@ ${findings.length ? findings.join("\n\n") : "החיפוש ברשת לא החזי
 
 ## מה להחזיר
 - area_name: שם המקום בעברית. זהה אותו לפי הכיתוב שנקרא מהמפה ולפי הנ"צ: הכיתוב הבולט ביותר שמתאים למיקום, ואחריו המחוז או המדינה. כיתוב שסותר את נתוני המיקום - העדף את נתוני המיקום.
-- affiliation: למי המקום קשור כיום - מי שולט בו, מפעיל אותו או מזוהה איתו (מדינה, זרוע צבאית, ארגון חמוש, עדה, כוח בינלאומי). שורה אחת קצרה. אם זה התחלף - ממי למי ומתי. אם אין מידע - מחרוזת ריקה.
-- background: רקע ב-2-4 משפטים: מה המקום, ההיסטוריה שלו ותפקידו הצבאי או הביטחוני.
-- events: עד 6 אירועים מרכזיים שקרו במקום, מהחדש לישן. date = YYYY-MM-DD, YYYY-MM או YYYY; event = משפט אחד: מה קרה, מי ביצע ונגד מי.
-- facts: עד 5 עובדות רלוונטיות שלא נכללו ברקע או באירועים: כוחות ויחידות שנמצאים במקום, אתרים ותשתיות בשטח, נתונים מספריים. label = נושא קצר (2-3 מילים), value = משפט אחד.
-- source_urls: עד 4 כתובות שעליהן נשענת, אך ורק מהרשימה הזו:
+- summary: סיכום כללי של המקום בפסקה אחת, 3-5 משפטים: מה המקום ותפקידו הצבאי או הביטחוני, למי הוא קשור כיום (מי שולט בו, מפעיל אותו או מזוהה איתו, וממי למי אם זה התחלף), ורקע קצר. אירועים - רק אחד או שניים המשמעותיים ביותר, משולבים בטקסט עם תאריך. לא רשימה.
+- source_urls: 2-4 הקישורים הרלוונטיים ביותר על המקום עצמו, אך ורק מהרשימה הזו:
 ${allowedUrls.length ? allowedUrls.join("\n") : "(אין)"}
 
 ## חוקים
 - רק מה שמופיע בחומר למעלה. אל תוסיף מידע מהזיכרון, ואל תמציא שמות, תאריכים, מספרים או שיוך.
 - רק מה שבתוך השטח המסומן. ממצא על מקום אחר בעל שם דומה, או על המדינה באופן כללי - השמט.
 - כשממצאי החיפוש סותרים את נתוני המפה לגבי מי מפעיל אתר, העדף את המידע העדכני יותר וציין את השינוי.
-- אירוע בלי תאריך בחומר - השמט. טענה של צד אחד בלבד - כתוב "לפי" ושם הטוען.
+- טענה של צד אחד בלבד - כתוב "לפי" ושם הטוען.
 - סגנון: תמציתי ועובדתי, כמו סיכום מודיעין. בלי הקדמות, בלי הסתייגויות כלליות, בלי "חשוב לציין", ובלי לחזור על הקואורדינטות.
-- אין מידע על המקום: background של משפט אחד שאומר זאת, ורשימות ריקות.`;
+- אין מידע על המקום: summary של משפט אחד שאומר זאת.`;
 }
 
 export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shapes = [], pois = [], placeLabels = [] }) {
@@ -361,7 +340,8 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
           prompt: LABELS_PROMPT,
           file_urls: [image],
           response_json_schema: LABELS_SCHEMA,
-          quality: "high"
+          quality: "high",
+          thinking: false
         });
         return [...new Set((labels?.names || []).map((n) => String(n).trim()).filter(Boolean))].slice(0, 10);
       } catch (e) {
@@ -380,7 +360,7 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
         { subject: "השטח כולו", prompt: overviewQuery(ctx) },
       ];
       const answers = await Promise.allSettled(
-        queries.map((q) => invokeLLMDetailed({ prompt: q.prompt, add_context_from_internet: true, search_only: true, max_tokens: 1200 }))
+        queries.map((q) => invokeLLMDetailed({ prompt: q.prompt, add_context_from_internet: true, search_only: true, max_tokens: 600 }))
       );
       const research = [];
       const cited = [];
@@ -401,7 +381,9 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
       const res = await base44.integrations.Core.InvokeLLM({
         prompt: synthesisPrompt(ctx, readNames, own, research, [...titles.keys()].slice(0, 30)),
         response_json_schema: SCHEMA,
-        quality: "high"
+        quality: "high",
+        thinking: false,
+        max_tokens: 1500
       });
 
       // With no text read from the screen, show the names the map data holds for the area.
@@ -409,14 +391,13 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
         ? readNames
         : [...ctx.sites.map((x) => x.name), ...knownPlaces(ctx).map((f) => f.nameHe || f.name || f.nameEn)].filter(Boolean).slice(0, 8);
       // Only links that were really gathered are shown; anything else the model wrote is dropped.
-      const sources = [...new Set(res?.source_urls || [])].filter((u) => titles.has(u)).slice(0, 4)
-        .map((url) => ({ url, title: titles.get(url) || url }));
+      // If the model picked none, the pages the web search actually used stand in.
+      let picked = [...new Set(res?.source_urls || [])].filter((u) => titles.has(u));
+      if (!picked.length) picked = [...new Set(cited.map((c) => c.url))];
+      const sources = picked.slice(0, 4).map((url) => ({ url, title: titles.get(url) || url }));
       setResult({
         area_name: res?.area_name || ctx.address?.display || names.join(", ") || `${lat}, ${lng}`,
-        affiliation: res?.affiliation || "",
-        background: res?.background || "",
-        events: (res?.events || []).filter((x) => x && x.event).slice(0, 6),
-        facts: (res?.facts || []).filter((x) => x && x.value).slice(0, 5),
+        summary: res?.summary || "",
         sources,
         names,
         coords: ctx.diagonalKm < 0.2
@@ -536,47 +517,13 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
                   </p>
                 )}
 
-                {result.affiliation && (
-                  <p className="text-[11px] text-foreground/90" dir="auto">
-                    <span className="font-mono text-[10px] text-amber-400/80">קשור ל: </span>
-                    {result.affiliation}
-                  </p>
-                )}
-
-                {result.background && (
-                  <div className="space-y-1">
-                    <p className="text-[9px] font-mono text-muted-foreground/60 uppercase tracking-wider">רקע</p>
-                    <p className="text-xs text-foreground/85 leading-relaxed whitespace-pre-wrap" dir="auto">{result.background}</p>
-                  </div>
-                )}
-
-                {result.events.length > 0 && (
-                  <div className="space-y-1">
-                    <p className="text-[9px] font-mono text-muted-foreground/60 uppercase tracking-wider">אירועים מרכזיים</p>
-                    {result.events.map((x, i) => (
-                      <div key={i} className="rounded-md border border-border/50 bg-muted/20 px-2.5 py-1.5">
-                        {x.date && <span className="text-[10px] font-mono text-amber-400/80" dir="ltr">{x.date}</span>}
-                        <p className="text-[11px] text-foreground/80" dir="auto">{x.event}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {result.facts.length > 0 && (
-                  <div className="space-y-1">
-                    <p className="text-[9px] font-mono text-muted-foreground/60 uppercase tracking-wider">עובדות רלוונטיות</p>
-                    {result.facts.map((f, i) => (
-                      <div key={i} className="rounded-md border border-border/50 bg-muted/20 px-2.5 py-1.5">
-                        <span className="text-[10px] font-mono text-amber-400/80" dir="auto">{f.label}</span>
-                        <p className="text-[11px] text-foreground/80" dir="auto">{f.value}</p>
-                      </div>
-                    ))}
-                  </div>
+                {result.summary && (
+                  <p className="text-xs text-foreground/85 leading-relaxed whitespace-pre-wrap" dir="auto">{result.summary}</p>
                 )}
 
                 {result.sources.length > 0 && (
                   <div className="space-y-1">
-                    <p className="text-[9px] font-mono text-muted-foreground/60 uppercase tracking-wider">מקורות</p>
+                    <p className="text-[9px] font-mono text-muted-foreground/60 uppercase tracking-wider">קישורים</p>
                     {result.sources.map((s, i) => (
                       <a
                         key={i}
@@ -592,7 +539,7 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
                   </div>
                 )}
 
-                {!result.background && result.events.length === 0 && result.facts.length === 0 && (
+                {!result.summary && (
                   <p className="text-xs font-mono text-muted-foreground">לא נמצא מידע גלוי על אזור זה.</p>
                 )}
               </div>

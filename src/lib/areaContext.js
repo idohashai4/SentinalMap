@@ -12,7 +12,6 @@
 const OVERPASS_SERVERS = [
   "https://overpass-api.de/api/interpreter",
   "https://overpass.private.coffee/api/interpreter",
-  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
 ];
 const NOMINATIM = "https://nominatim.openstreetmap.org/reverse";
 const WIKIDATA = "https://query.wikidata.org/sparql";
@@ -115,7 +114,7 @@ out center tags 300;`;
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: `data=${encodeURIComponent(query)}`,
-      }, 15000);
+      }, 8000);
       break;
     } catch (e) {
       lastError = e;
@@ -173,32 +172,6 @@ function fetchAddress({ center }, diagonalKm) {
   return reverseGeocode(center, addressZoom(diagonalKm));
 }
 
-const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-// Looks up the place at the middle of each quarter of the area, so the whole
-// area is covered and not only its center. Used when the feature query gave no
-// place names. The address service allows one request a second.
-async function sampleLocalities(box, diagonalKm) {
-  const latStep = (box.north - box.south) / 4;
-  const lngStep = (box.east - box.west) / 4;
-  const points = [
-    { lat: box.south + latStep, lng: box.west + lngStep },
-    { lat: box.south + latStep, lng: box.east - lngStep },
-    { lat: box.north - latStep, lng: box.west + lngStep },
-    { lat: box.north - latStep, lng: box.east - lngStep },
-  ];
-  const found = [];
-  for (const point of points) {
-    await pause(1100);
-    try {
-      const a = await reverseGeocode(point, Math.max(addressZoom(diagonalKm), 12));
-      if (a.locality) found.push({ ...point, name: a.locality });
-    } catch (e) {}
-  }
-  return found;
-}
-
-// Articles located in the area, each with its one-line description and opening sentences.
 async function fetchWikipediaIn(lang, { center }, box, diagonalKm) {
   const base = `${wikipediaApi(lang)}?action=query&generator=geosearch&ggslimit=20&prop=extracts%7Cdescription%7Ccoordinates&exintro=1&explaintext=1&exsentences=3&exlimit=20&format=json&origin=*`;
   const toList = (data) => Object.values(data.query?.pages || {}).map((p) => {
@@ -308,21 +281,6 @@ export async function gatherAreaContext(box) {
   ]);
 
   const features = osm.status === "fulfilled" ? osm.value.features : [];
-  // No place names for the area from the feature query: cover it by sampling.
-  if (!features.some((f) => f.kind === "place") && area.diagonalKm >= 1) {
-    const place = KINDS.findIndex((k) => k.id === "place");
-    const seen = new Set();
-    for (const p of await sampleLocalities(box, area.diagonalKm)) {
-      if (seen.has(p.name)) continue;
-      seen.add(p.name);
-      features.push({
-        kind: "place", kindLabel: KINDS[place].label, kindIndex: place,
-        name: p.name, nameEn: "", nameHe: "", detail: "",
-        lat: p.lat, lng: p.lng, distanceKm: km(area.center, p),
-      });
-    }
-  }
-
   return {
     center: area.center,
     box,
