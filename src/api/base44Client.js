@@ -112,6 +112,14 @@ async function invokeLLM({ file_urls = [], ...params }) {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || `AI request failed (${res.status})`);
+  // Extra facts about the call ride along without changing the answer's shape.
+  if (body.result && typeof body.result === "object") {
+    Object.defineProperty(body.result, "_sources", { value: body.sources || [], enumerable: false });
+    Object.defineProperty(body.result, "_webSearch", {
+      value: params.add_context_from_internet ? body.web_search === true : undefined,
+      enumerable: false,
+    });
+  }
   return body.result;
 }
 

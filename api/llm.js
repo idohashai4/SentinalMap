@@ -125,7 +125,9 @@ export default async function handler(req, res) {
   for (const modelId of models) {
     try {
       const { value, sources } = await run(modelId, input);
-      return res.status(200).json({ result: value, sources, model: modelId });
+      // web_search tells the caller whether the answer really came from the search
+      // model, or from a fallback model that only knows what it was trained on.
+      return res.status(200).json({ result: value, sources, model: modelId, web_search: modelId === SEARCH_MODEL });
     } catch (e) {
       lastError = e;
       console.error(`AI Gateway call failed on ${modelId}:`, e?.message);

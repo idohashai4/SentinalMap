@@ -499,7 +499,7 @@ export default function ThreatMap({
       </div>
 
       <div className="relative w-fit ml-auto flex items-center gap-1 pointer-events-auto">
-        <ResearcherTool mapRef={mapRef} suppressDrawRef={suppressDrawRef} />
+        <ResearcherTool mapRef={mapRef} suppressDrawRef={suppressDrawRef} tileMode={tileMode} shapes={filteredShapes} pois={visiblePoints} placeLabels={placeLabels} />
         <TranslationTool mapRef={mapRef} suppressDrawRef={suppressDrawRef} />
       </div>
       </div>
