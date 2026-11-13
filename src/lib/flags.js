@@ -103,6 +103,7 @@ export const FLAGS = [
   { id: "pa", label: "פנמה" },
   { id: "cr", label: "קוסטה ריקה" },
   { id: "gt", label: "גואטמלה" },
+  { id: "sv", label: "אל סלבדור" },
   { id: "do", label: "הרפובליקה הדומיניקנית" },
   { id: "ht", label: "האיטי" },
   { id: "jm", label: "ג׳מייקה" },
