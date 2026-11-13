@@ -222,7 +222,7 @@ export default function Dashboard() {
         {/* Map Panel - 60% */}
         <div className={mapFullscreen ?
         "fixed inset-0 z-[2000] p-2 bg-background flex flex-col" :
-        "h-[45vh] lg:h-full lg:w-[60%] p-2 lg:p-3"}>
+        "h-[55vh] lg:h-full lg:w-[60%] p-2 lg:p-3"}>
           <div className={mapFullscreen ? "flex items-center justify-between gap-2 mb-2 shrink-0 px-1" : "hidden"}>
             <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">מפה במסך מלא</span>
             <div className="flex items-center gap-3">

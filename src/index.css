@@ -136,3 +136,31 @@
 .shape-label-tooltip::before {
   display: none !important;
 }
+
+.marker-cluster-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 13, 26, 0.88);
+  color: #fff;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Touch screens have no hover: show the actions that otherwise appear on hover,
+   and give them a finger-sized hit area. */
+@media (hover: none) {
+  .group .opacity-0 {
+    opacity: 1 !important;
+    padding: 8px;
+  }
+}
+
+/* Phones zoom by pinching, so the +/- buttons only take space from the map. */
+@media (max-width: 1023px) and (pointer: coarse) {
+  .leaflet-control-zoom {
+    display: none;
+  }
+}

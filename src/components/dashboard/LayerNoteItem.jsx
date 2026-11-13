@@ -29,7 +29,7 @@ export default function LayerNoteItem({ note, onDeleted }) {
               href={linkHref}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-[11px] font-mono text-cyan-400 hover:text-cyan-300 break-all"
+              className="inline-flex max-w-full items-center gap-1 text-[11px] font-mono text-cyan-400 hover:text-cyan-300 break-all"
               dir="ltr"
             >
               <ExternalLink className="w-3 h-3 shrink-0" />

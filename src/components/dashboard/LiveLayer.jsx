@@ -3,6 +3,7 @@ import { useMap } from "react-leaflet";
 import L from "leaflet";
 import { LIVE_COLORS, timeAgo } from "@/lib/liveFeeds";
 import { fetchEventSourceUrl } from "@/lib/monitorSituationFeed";
+import { createClusterGroup } from "@/lib/markerCluster";
 
 function escapeHtml(str) {
   return String(str == null ? "" : str)
@@ -61,14 +62,15 @@ export default function LiveLayer({ subscribe, getItems, onSave, savedIds = [], 
   const draw = () => {
     if (!map) return;
     if (groupRef.current) groupRef.current.clearLayers();
-    else groupRef.current = L.featureGroup().addTo(map);
+    else groupRef.current = createClusterGroup({ shape: "diamond" }).addTo(map);
 
     getItems().forEach((item) => {
       if (typeof item.lat !== "number" || typeof item.lon !== "number") return;
       const color = LIVE_COLORS[item.group] || "#a855f7";
       const marker = L.marker([item.lat, item.lon], {
         icon: makeLiveIcon(color),
-        zIndexOffset: 500
+        zIndexOffset: 500,
+        clusterColor: color
       });
       marker.bindPopup(popupHTML(item, color, savedRef.current.includes(item.id)));
       marker.on("popupopen", (e) => {

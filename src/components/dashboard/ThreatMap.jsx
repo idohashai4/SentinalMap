@@ -15,6 +15,7 @@ import TranslationTool from "./TranslationTool";
 import ResearcherTool from "./ResearcherTool";
 import LiveLayer from "./LiveLayer";
 import { flagUrl } from "@/lib/flags";
+import { createClusterGroup } from "@/lib/markerCluster";
 
 function makeIcon(color = "#3b82f6") {
   return new L.DivIcon({
@@ -256,13 +257,13 @@ function PointsLayer({ subscribe, getPoints, getTopicColor, onDelete }) {
   const draw = () => {
     if (!map) return;
     if (groupRef.current) groupRef.current.clearLayers();
-    else groupRef.current = L.featureGroup().addTo(map);
+    else groupRef.current = createClusterGroup().addTo(map);
 
     getPoints().forEach((poi) => {
       if (!poi.latitude || !poi.longitude) return;
       const tColor = getTopicColor(poi.topic);
       const color = poi.marker_color || tColor || "#3b82f6";
-      const m = L.marker([poi.latitude, poi.longitude], { icon: makeIcon(color) });
+      const m = L.marker([poi.latitude, poi.longitude], { icon: makeIcon(color), clusterColor: color });
       m.bindPopup(poiPopupHTML(poi, tColor));
       m.on("popupopen", () => {
         const el = m.getPopup().getElement();
@@ -464,11 +465,11 @@ export default function ThreatMap({
   return (
     <div className="relative w-full h-full rounded-lg overflow-hidden border border-border">
       {/* Top controls */}
-      <div className="absolute top-2 left-2 right-2 z-[1000] flex flex-col gap-2 pointer-events-none">
+      <div className="absolute top-2 left-14 right-2 z-[1000] flex flex-col gap-2 pointer-events-none">
       <div className="flex flex-wrap items-center justify-between gap-2 pointer-events-auto">
         <div className="bg-black/70 backdrop-blur-sm border border-white/10 rounded-md px-3 py-1.5 flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-chart-3 animate-pulse" />
-          <span className="text-xs font-mono text-white/60 uppercase tracking-wider">מפת מחקר</span>
+          <span className="hidden sm:inline text-xs font-mono text-white/60 uppercase tracking-wider">מפת מחקר</span>
           <span className="text-xs font-mono text-primary font-semibold">{visiblePoints.filter(p => p.latitude && p.longitude).length}</span>
         </div>
         <div className="flex gap-1 flex-wrap justify-end items-center">
@@ -480,7 +481,7 @@ export default function ThreatMap({
           ].map(({ id, label, icon }) => (
             <button key={id}
               onClick={() => setTileMode(id)}
-              className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-mono transition-all ${tileMode === id ? "bg-primary text-primary-foreground" : "bg-black/70 text-white/60 hover:text-white border border-white/10"}`}
+              className={`flex items-center gap-1 px-2 py-1.5 lg:py-1 rounded text-xs font-mono transition-all ${tileMode === id ? "bg-primary text-primary-foreground" : "bg-black/70 text-white/60 hover:text-white border border-white/10"}`}
             >
               {icon} {label}
             </button>

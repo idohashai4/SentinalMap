@@ -23,7 +23,7 @@ export default function LiveLayersPanel({ live, savedIds = [], onFocus, onSave, 
                 aria-checked={on}
                 aria-label={group.label}
                 onClick={() => live.toggle(group.id, area)}
-                className={`relative w-8 h-4 rounded-full shrink-0 transition-colors ${on ? "bg-primary" : "bg-muted"}`}
+                className={`relative w-8 h-4 rounded-full shrink-0 transition-colors after:absolute after:-inset-3 after:content-[''] ${on ? "bg-primary" : "bg-muted"}`}
               >
                 <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${on ? "left-[18px]" : "left-0.5"}`} />
               </button>
