@@ -7,7 +7,7 @@
 
 1. **Supabase** — שתי המיגרציות בתיקייה `supabase/migrations/` יוצרות את הטבלאות ומייבאות את כל הנתונים מ-Base44 (כולל כתובת האימייל המורשית). עם חיבור GitHub של Supabase הן רצות אוטומטית בדחיפה לענף `main`; בלי החיבור, הרץ אותן לפי הסדר ב-SQL Editor.
 2. **Vercel** — ייבא את הריפו והגדר את משתני הסביבה `VITE_SUPABASE_URL` ו-`VITE_SUPABASE_ANON_KEY` (מ-Supabase > Project Settings > API).
-3. **התחברות עם Google** — ב-Google Cloud Console צור OAuth Client מסוג Web, עם Redirect URI‏ `https://<project>.supabase.co/auth/v1/callback`. הדבק את ה-Client ID וה-Secret ב-Supabase > Authentication > Sign In / Providers > Google. ב-Authentication > URL Configuration קבע את Site URL לכתובת האתר ב-Vercel.
+3. **משתמש** — ב-Supabase > Authentication > Users צור משתמש עם אימייל וסיסמה (Auto Confirm User), באותו אימייל שברשימת המורשים. כבה הרשמה ציבורית ב-Authentication > Sign In / Providers > Allow new users to sign up.
 4. **AI** — הכלים "חוקר שטח" ו"תרגום" רצים דרך `api/llm.js` על Vercel AI Gateway, בלי מפתח API. נדרש שה-AI Gateway יהיה פעיל בצוות ב-Vercel (אמצעי תשלום רשום; אין חיוב במודלים של ה-Free Tier).
 
 ## פרטיות
