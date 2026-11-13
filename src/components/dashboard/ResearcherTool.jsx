@@ -6,10 +6,6 @@ import { base44 } from "@/api/base44Client";
 import { useToast } from "@/components/ui/use-toast";
 import { gatherAreaContext, normalizeBox } from "@/lib/areaContext";
 
-
-const CERTAINTY = ["גבוהה", "בינונית", "נמוכה"];
-const WHERE = ["בתוך האזור", "בסביבה"];
-
 const SCHEMA = {
   type: "object",
   properties: {
@@ -19,14 +15,7 @@ const SCHEMA = {
       type: "array",
       items: {
         type: "object",
-        properties: {
-          label: { type: "string" },
-          value: { type: "string" },
-          date: { type: "string" },
-          where: { type: "string", enum: WHERE },
-          certainty: { type: "string", enum: CERTAINTY },
-          source_url: { type: "string" }
-        }
+        properties: { label: { type: "string" }, value: { type: "string" } }
       }
     },
     sources: {
@@ -49,80 +38,65 @@ const LABELS_SCHEMA = {
 const LABELS_PROMPT = `התמונה היא חיתוך מתוך מפה גאוגרפית. תפקידך לקרוא את הכיתובים שמודפסים עליה.
 חוקים:
 - החזר כל כיתוב בדיוק כפי שהוא כתוב במפה, אות באות, בשפת המקור, בלי תרגום ובלי תיקון.
-- כלול שמות מקומות (מדינות, ערים, יישובים, שכונות, רחובות, כבישים, נהרות, הרים) וכיתובים של מתקנים: בסיסים ומחנות, שדות תעופה, נמלים, מוצבים, מחסומים, מבני ממשל ותשתיות.
+- כלול שמות מקומות (ערים, יישובים, שכונות, רחובות, כבישים, נהרות, הרים) וכיתובים של מתקנים: בסיסים, מחנות, שדות תעופה, נמלים, מוצבים, מחסומים, מבני ממשל ותשתיות.
 - אל תנחש: כיתוב חתוך או לא קריא - דלג עליו. אל תוסיף שמות שאינם כתובים בתמונה, גם אם אתה מזהה את האזור.
-- התעלם מזכויות יוצרים של ספק המפה (OpenStreetMap, Esri וכדומה), ממספרי כבישים בודדים ומסמלים.
-- כל שם פעם אחת בלבד. עד 25 שמות. אם אין טקסט קריא - החזר מערך ריק.`;
+- התעלם מזכויות יוצרים של ספק המפה (OpenStreetMap, Esri), ממספרים בודדים ומסמלים.
+- כל שם פעם אחת בלבד. עד 10 שמות. אם אין טקסט קריא - החזר מערך ריק.`;
 
 // Basemaps that print place names; satellite imagery alone has no text to read.
 const LAYERS_WITH_TEXT = ["street", "esri_street", "hybrid"];
 
 const fmtKm = (n) => (n < 1 ? `${Math.round(n * 1000)} מ'` : `${n.toFixed(1)} ק"מ`);
 
-function describeArea(ctx) {
-  const { box, center, diagonalKm } = ctx;
-  const size = diagonalKm < 0.2
-    ? "נקודה בודדת (נבדק רדיוס של כ-500 מטר סביבה)"
-    : `מלבן שאלכסונו ${fmtKm(diagonalKm)}`;
-  return `מרכז: ${center.lat.toFixed(5)}, ${center.lng.toFixed(5)}
-גבולות: דרום ${box.south.toFixed(5)}, צפון ${box.north.toFixed(5)}, מערב ${box.west.toFixed(5)}, מזרח ${box.east.toFixed(5)}
-גודל: ${size}`;
+// What is verifiably inside the marked area. Security sites always go in;
+// ordinary place names only fill the remaining room, nearest first.
+function knownPlaces(ctx) {
+  const sites = ctx.features.filter((f) => f.kind !== "place");
+  const places = ctx.features.filter((f) => f.kind === "place").slice(0, Math.max(3, 10 - sites.length));
+  return [...sites.slice(0, 12), ...places];
 }
 
 function researchPrompt(ctx, mapNames, own) {
-  const today = new Date().toISOString().slice(0, 10);
-  const a = ctx.address;
-  const where = a ? [a.locality, a.district, a.region, a.country].filter(Boolean).join(", ") : "";
-  const osm = ctx.features.map((f) => {
+  const { center, box, address } = ctx;
+  const where = address ? [address.locality, address.district, address.region, address.country].filter(Boolean).join(", ") : "";
+  const places = knownPlaces(ctx).map((f) => {
     const names = [f.name, f.nameEn, f.nameHe].filter((v, i, arr) => v && arr.indexOf(v) === i).join(" / ") || "ללא שם";
-    return `- ${f.kindLabel}: ${names}${f.detail ? ` (${f.detail})` : ""} - ${fmtKm(f.distanceKm)} ממרכז האזור`;
+    return `- ${f.kindLabel}: ${names} (${fmtKm(f.distanceKm)} מהמרכז)`;
   });
-  const wiki = ctx.wikipedia.map((w) => `- ${w.title} (${fmtKm(w.distanceKm)} מהמרכז) ${w.url}`);
+  const wiki = ctx.wikipedia.slice(0, 6).map((w) => w.title);
 
-  return `אתה חוקר מודיעין גלוי (OSINT) המתמחה בהיבטים ביטחוניים. התאריך היום: ${today}.
-סומן אזור במפה. תפקידך לתאר מה נמצא ומה קרה באזור המסומן עצמו - לא באזור הרחב שסביבו.
+  return `אתה חוקר מודיעין גלוי (OSINT) המתמחה בהיבטים ביטחוניים. התאריך היום: ${new Date().toISOString().slice(0, 10)}.
+סומן אזור במפה שמרכזו ${center.lat.toFixed(5)}, ${center.lng.toFixed(5)} (גבולות: ${box.south.toFixed(4)} עד ${box.north.toFixed(4)} צפון, ${box.west.toFixed(4)} עד ${box.east.toFixed(4)} מזרח).
+${where ? `המיקום: ${where}.` : ""}
 
-## האזור המסומן
-${describeArea(ctx)}
-${where ? `מיקום מנהלי (מאומת): ${where}` : "מיקום מנהלי: לא אותר"}
+מה שנמצא באזור בפועל (נתוני מפה מאומתים):
+${places.length ? places.join("\n") : "לא נמצאו יישובים או מתקנים ממופים."}
 
-## מה שקיים באזור לפי OpenStreetMap (נתון מאומת, לא ניחוש)
-${osm.length ? osm.join("\n") : ctx.osmStatus === "ok" ? "לא נמצאו באזור יישובים או מתקנים ממופים." : "הנתון לא זמין כרגע."}
+כיתובים שנקראו מהמפה: ${mapNames.length ? mapNames.join(", ") : "אין"}
+ערכי ויקיפדיה באזור: ${wiki.length ? wiki.join(", ") : "אין"}
+סימונים של החוקר באזור: ${own.length ? own.join(", ") : "אין"}
 
-## כיתובים שנקראו מהמפה שעל המסך
-${mapNames.length ? mapNames.join(", ") : "אין (שכבת לוויין ללא טקסט, או שלא זוהה טקסט)."}
+המשימה: אפיין את האזור המסומן מבחינה ביטחונית. חפש ברשת על המקומות שברשימות למעלה בשמם המדויק, יחד עם שם המדינה או המחוז, כדי לא להתבלבל עם מקום בעל שם דומה במקום אחר.
 
-## ערכי ויקיפדיה שממוקמים באזור
-${wiki.length ? wiki.join("\n") : "לא נמצאו."}
+התמקד בהיבטים ביטחוניים בלבד: בסיסים ומתקנים צבאיים, מחנות, מוצבים ומחסומים, כוחות וארגונים שפועלים במקום, תשתיות אסטרטגיות (שדות תעופה, נמלים, תחנות כוח), ואירועי עימות, תקיפות ותקריות ביטחוניות.
 
-## סימונים של החוקר עצמו באזור (מהמפה שלו)
-${own.length ? own.join(", ") : "אין."}
+החזר:
+- area_name: שם האזור בעברית, קצר (יישוב או מתקן, ואחריו המחוז או המדינה).
+- summary: 3-5 משפטים בעברית על מה שקיים באזור המסומן מבחינה צבאית וביטחונית.
+- facts: עד 6 עובדות ביטחוניות, החשובות ביותר בלבד. label = נושא קצר (2-3 מילים), value = הנתון עצמו במשפט אחד, כולל תאריך כשמדובר באירוע.
+- sources: עד 4 קישורים למקורות שמצאת, כל אחד עם title ו-url מלא.
 
-## המשימה
-חפש ברשת מידע ביטחוני על המקומות והמתקנים שברשימות למעלה, בשמם המדויק יחד עם שם המדינה או המחוז כדי להימנע מבלבול עם מקומות בעלי שם דומה במקום אחר.
-התמקד ב: בסיסים, מחנות, מוצבים ומחסומים; כוחות וארגונים שפועלים במקום; תשתיות אסטרטגיות; תקיפות, עימותים ותקריות ביטחוניות - עם תאריכים.
-
-## כללי דיוק - מחייבים
-1. מיקום: כלול רק מה שנמצא בתוך גבולות האזור המסומן, או שנוגע ישירות למקום שמופיע ברשימות למעלה. דבר שנמצא מחוץ לגבולות אך קרוב ורלוונטי - סמן where = "בסביבה" וציין בתוך value את המרחק או את שם המקום. אל תכלול מידע כללי על המדינה או על המחוז.
-2. אם שם מקום ברשימות קיים גם במדינה אחרת - ודא שהמקור מדבר על המקום הנכון לפי המדינה והמחוז.
-3. כל עובדה חייבת להישען על מקור שמצאת בחיפוש. source_url = כתובת המקור המדויקת. אין מקור - אל תכלול את העובדה.
-4. date = תאריך האירוע או תאריך הדיווח, בפורמט YYYY-MM-DD או YYYY-MM או YYYY. אם אינו ידוע - מחרוזת ריקה. אל תציג אירוע ישן כעדכני.
-5. certainty: "גבוהה" = מאושר בכמה מקורות אמינים או במקור רשמי; "בינונית" = מקור אמין יחיד; "נמוכה" = דיווח לא מאומת, רשתות חברתיות או טענה של צד אחד.
-6. אל תמציא שמות, מספרים, תאריכים או קישורים. אם לא מצאת מידע ביטחוני על האזור - אמור זאת ב-summary והחזר facts ריק. תשובה ריקה עדיפה על תשובה משוערת.
-
-## הפלט
-- area_name: שם האזור בעברית, לפי המיקום המנהלי והמקומות שברשימות.
-- summary: 3-5 משפטים בעברית על מה שקיים באזור המסומן מבחינה ביטחונית. הבחן במפורש בין מה שמאומת (מהרשימות למעלה) לבין מה שעולה מדיווחים.
-- facts: עד 8 עובדות, מהחדשה לישנה. label = נושא קצר, value = הנתון עצמו.
-- sources: המקורות שעליהם נשענת, title ו-url מלא.`;
+חוקים:
+- רק האזור המסומן. אל תכתוב על המדינה או המחוז באופן כללי, ואל תכלול מקום שמחוץ לגבולות אלא אם הוא נוגע ישירות למה שבתוכם - ואז ציין את המרחק.
+- רק מידע שמצאת במקור. אל תמציא עובדות, שמות, מספרים, תאריכים או קישורים. עדיף פחות עובדות מאשר עובדה לא בטוחה.
+- סגנון: תמציתי ועובדתי, כמו סיכום מודיעין קצר. בלי הקדמות, בלי הסתייגויות כלליות, בלי "חשוב לציין" או "על פי המידע", ובלי לחזור על הקואורדינטות או על נוסח המשימה.
+- אם אין מידע ביטחוני על האזור - summary של משפט אחד שאומר זאת, ו-facts ריק.`;
 }
 
 export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shapes = [], pois = [], placeLabels = [] }) {
   const [active, setActive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
-  const [context, setContext] = useState(null);
-  const [stage, setStage] = useState("");
   const { toast } = useToast();
   const drawerRef = useRef(null);
   const createdHandlerRef = useRef(null);
@@ -205,16 +179,17 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
     placeLabels.forEach((l) => {
       if (l.name && l.latitude && l.longitude && searchBounds.contains([l.latitude, l.longitude])) names.add(l.name);
     });
-    return [...names].slice(0, 20);
+    return [...names].slice(0, 12);
   };
 
   const research = async (map, bounds) => {
     setLoading(true);
     setResult(null);
-    setContext(null);
     clearHighlight();
 
     const center = bounds.getCenter();
+    const lat = center.lat.toFixed(5);
+    const lng = center.lng.toFixed(5);
     const meters = center.distanceTo(bounds.getNorthEast());
 
     if (meters < 100) {
@@ -259,34 +234,36 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
       }
     };
 
-    setStage("אוסף נתוני מיקום...");
-    const [ctx, names] = await Promise.all([gatherAreaContext(box), readMapText()]);
-    setContext({ ...ctx, names, own, textLayer: LAYERS_WITH_TEXT.includes(tileMode) });
+    // Verified map data for the area and the text on screen, gathered side by side.
+    const [ctx, readNames] = await Promise.all([gatherAreaContext(box), readMapText()]);
+    // With no text read from the screen, show the names the map data holds for the area.
+    const names = readNames.length
+      ? readNames
+      : knownPlaces(ctx).map((f) => f.nameHe || f.name || f.nameEn).filter(Boolean).slice(0, 8);
 
-    setStage("מחפש ברשת...");
     try {
       const res = await base44.integrations.Core.InvokeLLM({
-        prompt: researchPrompt(ctx, names, own),
+        prompt: researchPrompt(ctx, readNames, own),
         add_context_from_internet: true,
         response_json_schema: SCHEMA
       });
-      // Pages the search model actually opened, as reported by the model provider.
+      // Pages the search model really opened come first; links the model only wrote come after.
       const cited = res?._sources || [];
       const citedUrls = new Set(cited.map((c) => c.url));
       const listed = (res?.sources || []).filter((src) => src && /^https?:\/\//.test(src.url || ""));
-      const merged = [...cited, ...listed.filter((src) => !citedUrls.has(src.url))];
       setResult({
-        area_name: res?.area_name || ctx.address?.display || `${center.lat.toFixed(5)}, ${center.lng.toFixed(5)}`,
+        area_name: res?.area_name || ctx.address?.display || names.join(", ") || `${lat}, ${lng}`,
         summary: res?.summary || "",
-        facts: (res?.facts || []).filter((f) => f && f.value),
-        sources: merged.slice(0, 8),
-        webSearch: res?._webSearch !== false
+        facts: (res?.facts || []).filter((f) => f && f.value).slice(0, 6),
+        sources: [...cited, ...listed.filter((src) => !citedUrls.has(src.url))].slice(0, 4),
+        names,
+        coords: `${lat}, ${lng}`,
+        noWebSearch: res?._webSearch === false
       });
     } catch (e) {
-      toast({ title: "הסריקה נכשלה", description: e?.message || "נסה לסמן אזור אחר.", variant: "destructive" });
+      toast({ title: "הסריקה נכשלה", description: "נסה לסמן אזור אחר.", variant: "destructive" });
     } finally {
       setLoading(false);
-      setStage("");
     }
   };
 
@@ -294,7 +271,6 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
     const map = mapRef.current;
     if (!map) return;
     setResult(null);
-    setContext(null);
     setActive(true);
     clearHighlight();
     if (suppressDrawRef) suppressDrawRef.current = true;
@@ -335,7 +311,6 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
 
   const close = () => {
     setResult(null);
-    setContext(null);
     clearHighlight();
   };
 
@@ -356,107 +331,60 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
         {loading ? "סורק..." : active ? "סמן אזור..." : "חוקר שטח"}
       </button>
 
-      {(loading || result || context) && (
-        <div className="absolute top-[3rem] right-0 z-[1000] w-[22rem] max-w-[calc(100vw-5rem)] bg-card/95 backdrop-blur-md border border-border rounded-xl shadow-2xl shadow-black/50 overflow-hidden">
+      {(loading || result) && (
+        <div className="absolute top-[3rem] right-0 z-[1000] w-80 max-w-[calc(100vw-5rem)] bg-card/95 backdrop-blur-md border border-border rounded-xl shadow-2xl shadow-black/50 overflow-hidden">
           <div className="flex items-center gap-2 px-3 py-2 border-b border-border/60 bg-muted/30">
             <Radar className="w-3.5 h-3.5 text-amber-400 shrink-0" />
             <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">חוקר שטח</span>
-            <button onClick={close} aria-label="סגור" className="ml-auto text-muted-foreground hover:text-foreground transition-colors">
+            <button onClick={close} className="ml-auto text-muted-foreground hover:text-foreground transition-colors">
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          <div className="p-3 max-h-[60vh] overflow-y-auto space-y-3" dir="rtl">
-            {loading && (
-              <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground">
-                <Loader2 className="w-4 h-4 animate-spin" /> {stage || "סורק..."}
+          <div className="p-3 max-h-[22rem] overflow-y-auto">
+            {loading ? (
+              <div className="flex items-center justify-center gap-2 py-5 text-xs font-mono text-muted-foreground">
+                <Loader2 className="w-4 h-4 animate-spin" /> סורק את הרשת...
               </div>
-            )}
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <h4 className="text-sm font-semibold text-foreground" dir="auto">{result.area_name}</h4>
+                  {result.coords && (
+                    <p className="text-[10px] font-mono text-muted-foreground/60 mt-1" dir="auto">
+                      מיקום: {result.coords}
+                    </p>
+                  )}
+                  {result.names?.length > 0 ? (
+                    <p className="text-[10px] font-mono text-amber-400/70 mt-1" dir="auto">
+                      זוהה במפה: {result.names.join(" · ")}
+                    </p>
+                  ) : (
+                    <p className="text-[10px] font-mono text-muted-foreground/50 mt-1">
+                      לא זוהה טקסט על המפה — הסריקה מבוססת על המיקום
+                    </p>
+                  )}
+                </div>
 
-            {result && (
-              <div>
-                <h4 className="text-sm font-semibold text-foreground" dir="auto">{result.area_name}</h4>
-                {!result.webSearch && (
-                  <p className="mt-1 rounded border border-red-500/40 bg-red-500/10 px-2 py-1 text-[10px] font-mono text-red-300">
-                    החיפוש ברשת לא היה זמין. התשובה מבוססת על ידע כללי של המודל ועלולה להיות לא מדויקת או לא עדכנית.
+                {result.noWebSearch && (
+                  <p className="text-[10px] font-mono text-red-300">
+                    החיפוש ברשת לא היה זמין — התשובה מבוססת על ידע כללי של המודל
                   </p>
                 )}
-              </div>
-            )}
 
-            {context && (
-              <div className="rounded-md border border-border/50 bg-muted/20 px-2.5 py-2 space-y-1.5">
-                <p className="text-[9px] font-mono text-emerald-400/80 uppercase tracking-wider">נתוני מיקום מאומתים</p>
-                <p className="text-[10px] font-mono text-muted-foreground" dir="ltr">
-                  {context.center.lat.toFixed(5)}, {context.center.lng.toFixed(5)} · {context.diagonalKm < 0.2 ? "נקודה" : fmtKm(context.diagonalKm)}
-                </p>
-                {context.address?.display && (
-                  <p className="text-[11px] text-foreground/85" dir="auto">{context.address.display}</p>
-                )}
-                {context.features.length > 0 ? (
-                  <ul className="space-y-0.5">
-                    {context.features.slice(0, 12).map((f, i) => (
-                      <li key={i} className="flex items-baseline gap-1.5 text-[11px]">
-                        <span className={`shrink-0 text-[9px] font-mono ${f.kind === "place" ? "text-muted-foreground" : "text-amber-400"}`}>{f.kindLabel}</span>
-                        <span className="min-w-0 truncate text-foreground/85" dir="auto">{f.nameHe || f.name || f.nameEn || "ללא שם"}</span>
-                        <span className="mr-auto shrink-0 text-[9px] font-mono text-muted-foreground/70">{fmtKm(f.distanceKm)}</span>
-                      </li>
-                    ))}
-                    {context.featuresTotal > 12 && (
-                      <li className="text-[9px] font-mono text-muted-foreground/60">ועוד {context.featuresTotal - 12} פריטים ממופים</li>
-                    )}
-                  </ul>
-                ) : (
-                  <p className="text-[10px] font-mono text-muted-foreground/70">
-                    {context.osmStatus === "ok"
-                      ? "אין באזור יישובים או מתקנים ממופים ב-OpenStreetMap."
-                      : context.osmStatus === "area_too_large"
-                        ? "האזור גדול מדי לפירוט מתקנים. סמן אזור קטן יותר לתוצאה מדויקת."
-                        : "נתוני OpenStreetMap לא זמינים כרגע."}
-                  </p>
-                )}
-                {context.names.length > 0 ? (
-                  <p className="text-[10px] font-mono text-amber-400/80" dir="auto">נקרא מהמפה: {context.names.join(" · ")}</p>
-                ) : (
-                  <p className="text-[10px] font-mono text-muted-foreground/60">
-                    {context.textLayer ? "לא זוהה טקסט על המפה באזור שסומן." : "בשכבת SAT אין טקסט לקריאה. עבור ל-MAP או HYBRID כדי שהכיתובים ייקראו."}
-                  </p>
-                )}
-                {context.own.length > 0 && (
-                  <p className="text-[10px] font-mono text-cyan-400/80" dir="auto">הסימונים שלך באזור: {context.own.join(" · ")}</p>
-                )}
-              </div>
-            )}
-
-            {result && (
-              <>
                 {result.summary && (
-                  <p className="text-xs text-foreground/85 leading-relaxed whitespace-pre-wrap" dir="auto">{result.summary}</p>
+                  <p className="text-xs text-foreground/85 leading-relaxed whitespace-pre-wrap" dir="auto">
+                    {result.summary}
+                  </p>
                 )}
 
                 {result.facts.length > 0 && (
                   <div className="space-y-1">
-                    <p className="text-[9px] font-mono text-muted-foreground/60 uppercase tracking-wider">ממצאים מדיווחים</p>
+                    <p className="text-[9px] font-mono text-muted-foreground/60 uppercase tracking-wider">עובדות מרכזיות</p>
                     {result.facts.map((f, i) => (
                       <div key={i} className="rounded-md border border-border/50 bg-muted/20 px-2.5 py-1.5">
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                          <span className="text-[10px] font-mono text-amber-400/80" dir="auto">{f.label}</span>
-                          {f.date && <span className="text-[9px] font-mono text-muted-foreground" dir="ltr">{f.date}</span>}
-                          {f.where === "בסביבה" && <span className="text-[9px] font-mono text-cyan-400/80">בסביבה</span>}
-                          {f.certainty && (
-                            <span className={`mr-auto text-[9px] font-mono ${f.certainty === "גבוהה" ? "text-emerald-400" : f.certainty === "בינונית" ? "text-amber-300" : "text-red-300"}`}>
-                              ודאות {f.certainty}
-                            </span>
-                          )}
-                        </div>
+                        <span className="text-[10px] font-mono text-amber-400/80">{f.label}</span>
                         <p className="text-[11px] text-foreground/80" dir="auto">{f.value}</p>
-                        {/^https?:\/\//.test(f.source_url || "") && (
-                          <a href={f.source_url} target="_blank" rel="noopener noreferrer"
-                            className="inline-flex max-w-full items-center gap-1 text-[10px] font-mono text-blue-400 hover:text-blue-300">
-                            <ExternalLink className="w-2.5 h-2.5 shrink-0" />
-                            <span className="truncate" dir="ltr">{f.source_url.replace(/^https?:\/\/(www\.)?/, "").split("/")[0]}</span>
-                          </a>
-                        )}
                       </div>
                     ))}
                   </div>
@@ -465,20 +393,25 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
                 {result.sources.length > 0 && (
                   <div className="space-y-1">
                     <p className="text-[9px] font-mono text-muted-foreground/60 uppercase tracking-wider">מקורות</p>
-                    {result.sources.map((src, i) => (
-                      <a key={i} href={src.url} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-1.5 text-[11px] font-mono text-blue-400 hover:text-blue-300 transition-colors">
+                    {result.sources.map((s, i) => (
+                      <a
+                        key={i}
+                        href={s.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 text-[11px] font-mono text-blue-400 hover:text-blue-300 transition-colors"
+                      >
                         <ExternalLink className="w-3 h-3 shrink-0" />
-                        <span className="truncate" dir="auto">{src.title || src.url}</span>
+                        <span className="truncate">{s.title || s.url}</span>
                       </a>
                     ))}
                   </div>
                 )}
 
                 {!result.summary && result.facts.length === 0 && (
-                  <p className="text-xs font-mono text-muted-foreground">לא נמצא מידע ביטחוני גלוי על אזור זה.</p>
+                  <p className="text-xs font-mono text-muted-foreground">לא נמצא מידע גלוי על אזור זה.</p>
                 )}
-              </>
+              </div>
             )}
           </div>
         </div>
@@ -486,3 +419,4 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
     </>
   );
 }
+
