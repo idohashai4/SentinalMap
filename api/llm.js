@@ -114,7 +114,9 @@ export default async function handler(req, res) {
   }
   if (!String(input.prompt || "").trim()) return res.status(400).json({ error: "Missing prompt" });
 
-  const models = input.add_context_from_internet
+  const models = input.search_only // a web answer or nothing: a model without search would only guess
+    ? [SEARCH_MODEL]
+    : input.add_context_from_internet
     ? [SEARCH_MODEL, ...MODELS]
     : input.quality === "strict" // only the strong model: the caller waits and retries instead of using a weaker one
     ? QUALITY_MODELS.slice(0, 1)

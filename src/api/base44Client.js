@@ -98,7 +98,9 @@ function entity(table) {
 
 // AI runs in the app's own Vercel function (api/llm.js) on Vercel AI Gateway.
 // The signed-in user's token goes along so the function can refuse everyone else.
-async function invokeLLM({ file_urls = [], ...params }) {
+// Returns the answer together with what the function reports about the call:
+// the pages a web-search model opened, and whether a search really happened.
+export async function invokeLLMDetailed({ file_urls = [], ...params }) {
   const { data } = await supabase.auth.getSession();
   // Screenshots arrive as data URLs (see UploadPrivateFile) and are sent inline.
   const images = file_urls
@@ -112,15 +114,12 @@ async function invokeLLM({ file_urls = [], ...params }) {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || `AI request failed (${res.status})`);
-  // Extra facts about the call ride along without changing the answer's shape.
-  if (body.result && typeof body.result === "object") {
-    Object.defineProperty(body.result, "_sources", { value: body.sources || [], enumerable: false });
-    Object.defineProperty(body.result, "_webSearch", {
-      value: params.add_context_from_internet ? body.web_search === true : undefined,
-      enumerable: false,
-    });
-  }
-  return body.result;
+  return { result: body.result, sources: body.sources || [], webSearch: body.web_search === true };
+}
+
+// Base44-shaped call: just the answer.
+async function invokeLLM(params) {
+  return (await invokeLLMDetailed(params)).result;
 }
 
 function toDataUrl(file) {
