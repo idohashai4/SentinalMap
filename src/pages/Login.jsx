@@ -19,11 +19,8 @@ export default function Login() {
       options: { emailRedirectTo: window.location.origin },
     });
     if (failure) {
-      setError(
-        failure.status === 429
-          ? "נשלחו יותר מדי בקשות. נסה שוב בעוד כמה דקות."
-          : "לא ניתן לשלוח קישור לכתובת הזו."
-      );
+      // Show Supabase's own reason: it tells a wrong key from a blocked sign-up from a rate limit.
+      setError(`השליחה נכשלה: ${failure.message || failure.status || "שגיאה לא ידועה"}`);
     } else {
       setSent(true);
     }
@@ -63,7 +60,7 @@ export default function Login() {
               <input id="email" type="email" required autoComplete="email" dir="ltr" value={email}
                 onChange={(e) => setEmail(e.target.value)} className={inputCls} />
             </div>
-            {error && <p className="text-xs font-mono text-red-400">{error}</p>}
+            {error && <p className="text-xs font-mono text-red-400 break-words" dir="auto">{error}</p>}
             <button type="submit" disabled={busy}
               className="w-full h-10 rounded-md bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground text-xs font-mono font-semibold uppercase tracking-wider flex items-center justify-center gap-2 transition-colors">
               {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />} שלח לי קישור כניסה
