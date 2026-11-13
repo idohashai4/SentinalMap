@@ -52,7 +52,11 @@ const fmtKm = (n) => (n < 1 ? `${Math.round(n * 1000)} מ'` : `${n.toFixed(1)} �
 // ordinary place names only fill the remaining room, nearest first.
 function knownPlaces(ctx) {
   const sites = ctx.features.filter((f) => f.kind !== "place");
-  const places = ctx.features.filter((f) => f.kind === "place").slice(0, Math.max(3, 10 - sites.length));
+  // Places are taken evenly from near the center out to the edges of the area,
+  // so the far corners are represented and not only the middle.
+  const all = ctx.features.filter((f) => f.kind === "place").sort((a, b) => a.distanceKm - b.distanceKm);
+  const room = Math.max(4, 12 - sites.length);
+  const places = all.length <= room ? all : Array.from({ length: room }, (_, i) => all[Math.round((i * (all.length - 1)) / (room - 1))]);
   return [...sites.slice(0, 12), ...places];
 }
 
@@ -66,17 +70,21 @@ function researchPrompt(ctx, mapNames, own) {
   const wiki = ctx.wikipedia.slice(0, 6).map((w) => w.title);
 
   return `אתה חוקר מודיעין גלוי (OSINT) המתמחה בהיבטים ביטחוניים. התאריך היום: ${new Date().toISOString().slice(0, 10)}.
-סומן אזור במפה שמרכזו ${center.lat.toFixed(5)}, ${center.lng.toFixed(5)} (גבולות: ${box.south.toFixed(4)} עד ${box.north.toFixed(4)} צפון, ${box.west.toFixed(4)} עד ${box.east.toFixed(4)} מזרח).
+${ctx.diagonalKm < 0.2
+    ? `סומנה נקודה במפה: ${center.lat.toFixed(5)}, ${center.lng.toFixed(5)}. בדוק את הנקודה ואת סביבתה הקרובה (כ-500 מטר).`
+    : `סומן במפה שטח מלבני של ${fmtKm(ctx.widthKm)} (מזרח-מערב) על ${fmtKm(ctx.heightKm)} (צפון-דרום).
+פינות השטח: צפון-מערב ${box.north.toFixed(5)}, ${box.west.toFixed(5)} · צפון-מזרח ${box.north.toFixed(5)}, ${box.east.toFixed(5)} · דרום-מערב ${box.south.toFixed(5)}, ${box.west.toFixed(5)} · דרום-מזרח ${box.south.toFixed(5)}, ${box.east.toFixed(5)}.
+יש לבדוק את כל השטח שבין הפינות, עד קצותיו - לא רק את מרכזו.`}
 ${where ? `המיקום: ${where}.` : ""}
 
-מה שנמצא באזור בפועל (נתוני מפה מאומתים):
+מה שנמצא בתוך השטח בפועל, בכל חלקיו (נתוני מפה מאומתים):
 ${places.length ? places.join("\n") : "לא נמצאו יישובים או מתקנים ממופים."}
 
 כיתובים שנקראו מהמפה: ${mapNames.length ? mapNames.join(", ") : "אין"}
 ערכי ויקיפדיה באזור: ${wiki.length ? wiki.join(", ") : "אין"}
 סימונים של החוקר באזור: ${own.length ? own.join(", ") : "אין"}
 
-המשימה: אפיין את האזור המסומן מבחינה ביטחונית. חפש ברשת על המקומות שברשימות למעלה בשמם המדויק, יחד עם שם המדינה או המחוז, כדי לא להתבלבל עם מקום בעל שם דומה במקום אחר.
+המשימה: אפיין את כל השטח המסומן מבחינה ביטחונית. חפש ברשת על כל אחד מהמקומות שברשימות למעלה, גם אלה שרחוקים מהמרכז, בשמם המדויק, יחד עם שם המדינה או המחוז, כדי לא להתבלבל עם מקום בעל שם דומה במקום אחר.
 
 התמקד בהיבטים ביטחוניים בלבד: בסיסים ומתקנים צבאיים, מחנות, מוצבים ומחסומים, כוחות וארגונים שפועלים במקום, תשתיות אסטרטגיות (שדות תעופה, נמלים, תחנות כוח), ואירועי עימות, תקיפות ותקריות ביטחוניות.
 
@@ -87,7 +95,7 @@ ${places.length ? places.join("\n") : "לא נמצאו יישובים או מת�
 - sources: עד 4 קישורים למקורות שמצאת, כל אחד עם title ו-url מלא.
 
 חוקים:
-- רק האזור המסומן. אל תכתוב על המדינה או המחוז באופן כללי, ואל תכלול מקום שמחוץ לגבולות אלא אם הוא נוגע ישירות למה שבתוכם - ואז ציין את המרחק.
+- כל השטח המסומן, ורק הוא: התייחס למקומות בכל חלקי השטח ולא רק למה שבמרכזו. אל תכתוב על המדינה או המחוז באופן כללי, ואל תכלול מקום שמחוץ לגבולות אלא אם הוא נוגע ישירות למה שבתוכם - ואז ציין את המרחק.
 - רק מידע שמצאת במקור. אל תמציא עובדות, שמות, מספרים, תאריכים או קישורים. עדיף פחות עובדות מאשר עובדה לא בטוחה.
 - סגנון: תמציתי ועובדתי, כמו סיכום מודיעין קצר. בלי הקדמות, בלי הסתייגויות כלליות, בלי "חשוב לציין" או "על פי המידע", ובלי לחזור על הקואורדינטות או על נוסח המשימה.
 - אם אין מידע ביטחוני על האזור - summary של משפט אחד שאומר זאת, ו-facts ריק.`;
@@ -257,7 +265,9 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
         facts: (res?.facts || []).filter((f) => f && f.value).slice(0, 6),
         sources: [...cited, ...listed.filter((src) => !citedUrls.has(src.url))].slice(0, 4),
         names,
-        coords: `${lat}, ${lng}`,
+        coords: ctx.diagonalKm < 0.2
+          ? `נקודה · ${lat}, ${lng}`
+          : `שטח ${fmtKm(ctx.widthKm)} × ${fmtKm(ctx.heightKm)} · מרכז ${lat}, ${lng}`,
         noWebSearch: res?._webSearch === false
       });
     } catch (e) {
@@ -352,7 +362,7 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
                   <h4 className="text-sm font-semibold text-foreground" dir="auto">{result.area_name}</h4>
                   {result.coords && (
                     <p className="text-[10px] font-mono text-muted-foreground/60 mt-1" dir="auto">
-                      מיקום: {result.coords}
+                      {result.coords}
                     </p>
                   )}
                   {result.names?.length > 0 ? (
