@@ -4,6 +4,7 @@
 
 const TILE_URL = (z, x, y) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
 const TILE = 256;
+const MAX_ZOOM = 19;
 const MAX_TILES = 16;       // at most a 4×4 block: ~1 MB of image, one quick request
 const TARGET_WIDTH = 640;   // zoom in until the area is at least this wide, so labels are legible
 
@@ -24,9 +25,9 @@ function tileRange(box, z) {
 // The most detailed zoom at which the area still fits in MAX_TILES tiles,
 // starting from what is on screen and zooming in while the area is small.
 function chooseZoom(box, screenZoom) {
-  let z = Math.max(3, Math.min(18, Math.round(screenZoom)));
+  let z = Math.max(3, Math.min(MAX_ZOOM, Math.round(screenZoom)));
   const width = (zoom) => (lngToX(box.east, zoom) - lngToX(box.west, zoom)) * TILE;
-  while (z < 18 && width(z) < TARGET_WIDTH && tileRange(box, z + 1).count <= MAX_TILES) z++;
+  while (z < MAX_ZOOM && width(z) < TARGET_WIDTH && tileRange(box, z + 1).count <= MAX_TILES) z++;
   while (z > 3 && tileRange(box, z).count > MAX_TILES) z--;
   return z;
 }
@@ -41,8 +42,15 @@ function loadTile(url) {
   });
 }
 
-// Returns a PNG data URL of the area on the OpenStreetMap map.
-export async function renderMapTextImage(box, screenZoom) {
+// Returns a PNG data URL of the area on the OpenStreetMap map, with a margin
+// around it so labels on its edge are not cut, and the marked area itself
+// framed in orange (a ring for a single click).
+export async function renderMapTextImage(marked, screenZoom, { point = false } = {}) {
+  const center = { lat: (marked.south + marked.north) / 2, lng: (marked.west + marked.east) / 2 };
+  const kmPerLng = 111 * Math.max(0.2, Math.cos((center.lat * Math.PI) / 180));
+  const padLat = point ? 0.12 / 111 : Math.max((marked.north - marked.south) * 0.25, 0.04 / 111);
+  const padLng = point ? 0.12 / kmPerLng : Math.max((marked.east - marked.west) * 0.25, 0.04 / kmPerLng);
+  const box = { south: marked.south - padLat, north: marked.north + padLat, west: marked.west - padLng, east: marked.east + padLng };
   const z = chooseZoom(box, screenZoom);
   const { x0, x1, y0, y1 } = tileRange(box, z);
   const canvas = document.createElement("canvas");
@@ -67,6 +75,20 @@ export async function renderMapTextImage(box, screenZoom) {
   const crop = document.createElement("canvas");
   crop.width = width;
   crop.height = height;
-  crop.getContext("2d").drawImage(canvas, left, top, width, height, 0, 0, width, height);
+  const out = crop.getContext("2d");
+  out.drawImage(canvas, left, top, width, height, 0, 0, width, height);
+
+  // Frame what was marked.
+  const px = (lng) => (lngToX(lng, z) - x0) * TILE - left;
+  const py = (lat) => (latToY(lat, z) - y0) * TILE - top;
+  out.strokeStyle = "#f97316";
+  out.lineWidth = 4;
+  if (point) {
+    out.beginPath();
+    out.arc(px(center.lng), py(center.lat), 18, 0, Math.PI * 2);
+    out.stroke();
+  } else {
+    out.strokeRect(px(marked.west), py(marked.north), px(marked.east) - px(marked.west), py(marked.south) - py(marked.north));
+  }
   return crop.toDataURL("image/png");
 }

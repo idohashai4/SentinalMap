@@ -34,7 +34,7 @@ const EVENT = /attack|strike|airstrike|air raid|bombing|battle|massacre|siege|cl
 const NOISE = /museum|mosque|church|stadium|school|\\bbay\\b|stream|spring|mountain|monument|memorial|cemetery|landmark|archaeolog|hotel|park/i;
 const SETTLEMENT = /village|town|city|settlement|municipality|neighbou?rhood|populated|hamlet|commune|district|suburb|locality|כפר|עיר|יישוב|מקום מאוכלס/i;
 
-const MIN_HALF_SIDE_KM = 0.5;   // a click or tiny box still looks at ~1 km around it
+const POINT_HALF_SIDE_KM = 0.15; // a single click looks at ~300 m around it
 const MAX_OVERPASS_DIAGONAL_KM = 250;
 const WIDE_AREA_DIAGONAL_KM = 60;
 const MAX_FEATURES = 40;
@@ -70,19 +70,18 @@ async function getJson(url, options = {}, timeoutMs = 20000) {
   }
 }
 
-// { south, west, north, east } widened so that very small selections still cover ~1 km.
-export function normalizeBox(box) {
+// { south, west, north, east } of what was marked. A drawn rectangle is used
+// exactly as drawn; only a single click is widened to a small square around it.
+export function normalizeBox(box, { point = false } = {}) {
   const center = { lat: (box.south + box.north) / 2, lng: (box.west + box.east) / 2 };
-  const minLat = MIN_HALF_SIDE_KM / 111;
-  const minLng = MIN_HALF_SIDE_KM / (111 * Math.max(0.2, Math.cos((center.lat * Math.PI) / 180)));
-  const search = {
-    south: Math.min(box.south, center.lat - minLat),
-    north: Math.max(box.north, center.lat + minLat),
-    west: Math.min(box.west, center.lng - minLng),
-    east: Math.max(box.east, center.lng + minLng),
-  };
-  const diagonalKm = km({ lat: box.south, lng: box.west }, { lat: box.north, lng: box.east });
-  return { center, search, diagonalKm, widened: search.south !== box.south || search.west !== box.west };
+  let search = { ...box };
+  if (point) {
+    const dLat = POINT_HALF_SIDE_KM / 111;
+    const dLng = POINT_HALF_SIDE_KM / (111 * Math.max(0.2, Math.cos((center.lat * Math.PI) / 180)));
+    search = { south: center.lat - dLat, north: center.lat + dLat, west: center.lng - dLng, east: center.lng + dLng };
+  }
+  const diagonalKm = km({ lat: search.south, lng: search.west }, { lat: search.north, lng: search.east });
+  return { center, search, diagonalKm, point };
 }
 
 async function fetchOsmFeatures({ center, search }, diagonalKm) {
@@ -163,10 +162,14 @@ async function reverseGeocode(point, zoom) {
     district: a.county || a.state_district || a.district || "",
     locality: a.city || a.town || a.village || a.hamlet || a.suburb || "",
     countryCode: (a.country_code || "").toLowerCase(),
+    // At street zoom, the named object at the point itself (a stadium, a base, a building).
+    featureName: data.name || "",
+    featureType: [data.category, data.type].filter((v) => v && v !== "yes").join(":"),
   };
 }
 
-const addressZoom = (diagonalKm) => (diagonalKm > 150 ? 5 : diagonalKm > 30 ? 8 : diagonalKm > 5 ? 10 : 14);
+// Small areas are looked up at object level, so the answer is the thing that was marked.
+const addressZoom = (diagonalKm) => (diagonalKm > 150 ? 5 : diagonalKm > 30 ? 8 : diagonalKm > 5 ? 10 : diagonalKm > 2 ? 14 : 18);
 
 function fetchAddress({ center }, diagonalKm) {
   return reverseGeocode(center, addressZoom(diagonalKm));
@@ -188,12 +191,10 @@ async function fetchWikipediaIn(lang, { center }, box, diagonalKm) {
     };
   });
   // Preferred: articles inside the marked rectangle itself.
-  if (diagonalKm >= 0.2) {
-    try {
-      const data = await getJson(`${base}&ggsbbox=${box.north}%7C${box.west}%7C${box.south}%7C${box.east}`, {}, 12000);
-      if (!data.error) return toList(data);
-    } catch (e) {}
-  }
+  try {
+    const data = await getJson(`${base}&ggsbbox=${box.north}%7C${box.west}%7C${box.south}%7C${box.east}`, {}, 12000);
+    if (!data.error) return toList(data);
+  } catch (e) {}
   // Fallback for a single point, or a rectangle too large for the API: a radius (capped at 10 km).
   const radius = Math.round(Math.min(10000, Math.max(1000, (diagonalKm / 2) * 1000)));
   return toList(await getJson(`${base}&ggscoord=${center.lat}%7C${center.lng}&ggsradius=${radius}`, {}, 12000));
@@ -211,7 +212,7 @@ async function fetchWikipedia(area, box, diagonalKm, localLang) {
 // Everything Wikidata records with coordinates inside the rectangle: what each
 // item is, who operates / owns / occupies it, and the date when it is an event.
 async function fetchWikidata({ center }, box, diagonalKm) {
-  if (diagonalKm > MAX_WIKIDATA_DIAGONAL_KM || diagonalKm < 0.2) return { sites: [], events: [] };
+  if (diagonalKm > MAX_WIKIDATA_DIAGONAL_KM) return { sites: [], events: [] };
   const query = `SELECT ?item ?itemLabel ?nameEn ?itemDescription ?typeEn ?operatorLabel ?ownerLabel ?occupantLabel ?countryLabel ?date ?coord WHERE {
   SERVICE wikibase:box { ?item wdt:P625 ?coord.
     bd:serviceParam wikibase:cornerSouthWest "Point(${box.west} ${box.south})"^^geo:wktLiteral;
@@ -268,16 +269,16 @@ async function fetchWikidata({ center }, box, diagonalKm) {
 }
 
 // Every source is optional: one that is down or slow just leaves its part empty.
-export async function gatherAreaContext(box) {
-  const area = normalizeBox(box);
+export async function gatherAreaContext(box, { point = false } = {}) {
+  const area = normalizeBox(box, { point });
   // The address comes first: its country decides which local-language Wikipedia to read.
   const addressLookup = fetchAddress(area, area.diagonalKm);
   const localLang = addressLookup.then((a) => LOCAL_WIKI[a.countryCode], () => undefined);
   const [osm, address, wiki, wikidata] = await Promise.allSettled([
     fetchOsmFeatures(area, area.diagonalKm),
     addressLookup,
-    localLang.then((lang) => fetchWikipedia(area, box, area.diagonalKm, lang)),
-    fetchWikidata(area, box, area.diagonalKm),
+    localLang.then((lang) => fetchWikipedia(area, area.search, area.diagonalKm, lang)),
+    fetchWikidata(area, area.search, area.diagonalKm),
   ]);
 
   const features = osm.status === "fulfilled" ? osm.value.features : [];
@@ -285,7 +286,7 @@ export async function gatherAreaContext(box) {
     center: area.center,
     box,
     diagonalKm: area.diagonalKm,
-    widened: area.widened,
+    point,
     widthKm: km({ lat: area.center.lat, lng: box.west }, { lat: area.center.lat, lng: box.east }),
     heightKm: km({ lat: box.south, lng: area.center.lng }, { lat: box.north, lng: area.center.lng }),
     features,

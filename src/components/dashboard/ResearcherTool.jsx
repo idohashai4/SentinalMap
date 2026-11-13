@@ -20,22 +20,27 @@ const SCHEMA = {
 const LABELS_SCHEMA = {
   type: "object",
   properties: {
+    main: { type: "string" },
     names: { type: "array", items: { type: "string" } }
   }
 };
 
-const LABELS_PROMPT = `התמונה היא קטע ממפת OpenStreetMap של אזור שסומן. תפקידך לקרוא את הכיתובים שמודפסים עליה.
+const LABELS_PROMPT = `התמונה היא קטע ממפת OpenStreetMap. השטח שסומן מוקף במסגרת כתומה (או בעיגול כתום אם סומנה נקודה). מסביב למסגרת יש שוליים רק לצורך הקשר.
+תפקידך לקרוא את הכיתובים שמודפסים על המפה.
+
+- main: שם הדבר שממלא את המסגרת הכתומה או נמצא במרכזה (למשל אצטדיון, בסיס, נמל, מבנה, שכונה), בדיוק כפי שהוא כתוב. רק כיתוב שנמצא בתוך המסגרת או נוגע בה, לא כיתוב שבשוליים מסביב. אם אין כזה - מחרוזת ריקה.
+- names: כל הכיתובים שבתוך המסגרת או נוגעים בה, main ראשון, ואחריו מתקנים ואתרים, יישובים ושכונות. עד 8.
+
 חוקים:
-- החזר כל כיתוב בדיוק כפי שהוא כתוב במפה, אות באות, בשפת המקור, בלי תרגום ובלי תיקון. כיתוב שמופיע בשתי שפות - החזר את שתיהן כפריט אחד, מופרדות ב-" / ".
-- סדר לפי חשיבות: קודם שמות של מתקנים ואתרים (בסיסים, מחנות, שדות תעופה, נמלים, מוצבים, מחסומים, מבני ממשל, תשתיות), אחר כך יישובים ושכונות, ובסוף נהרות והרים. בתוך כל קבוצה - הכיתוב הגדול והבולט קודם.
-- דלג על שמות רחובות וכבישים, על מספרי כבישים ועל שמות של חנויות ועסקים.
-- אל תנחש: כיתוב חתוך או לא קריא - דלג עליו. אל תוסיף שמות שאינם כתובים בתמונה, גם אם אתה מזהה את האזור.
-- התעלם מזכויות יוצרים של ספק המפה ומסמלים.
-- כל שם פעם אחת בלבד. עד 10 שמות. אם אין טקסט קריא - החזר מערך ריק.`;
+- כל כיתוב בדיוק כפי שהוא כתוב, אות באות, בשפת המקור, בלי תרגום. כיתוב בשתי שפות - שתיהן כפריט אחד, מופרדות ב-" / ".
+- דלג על שמות רחובות וכבישים, מספרי כבישים ושמות חנויות, אלא אם הרחוב הוא הדבר היחיד שבמסגרת.
+- כיתובים שבשוליים, מחוץ למסגרת, לא נכללים - גם אם הם גדולים ובולטים.
+- אל תנחש: כיתוב חתוך או לא קריא - דלג. אל תוסיף שמות שאינם כתובים בתמונה.`;
 
 // Basemaps that print place names; satellite imagery alone has no text to read.
 const LAYERS_WITH_TEXT = ["street", "esri_street", "hybrid"];
 
+const fmtKmEn = (n) => (n < 1 ? `${Math.round(n * 1000)} m` : `${n.toFixed(1)} km`);
 const fmtKm = (n) => (n < 1 ? `${Math.round(n * 1000)} מ'` : `${n.toFixed(1)} ק"מ`);
 
 // What is verifiably inside the marked area. Security sites always go in;
@@ -51,6 +56,11 @@ function knownPlaces(ctx) {
 }
 
 const placeLine = (address) => (address ? [address.district, address.region, address.country].filter(Boolean).join(", ") : "");
+
+// In a small area, the Wikipedia article located nearest its center is very
+// likely about the thing that was marked.
+const centralArticle = (ctx) =>
+  ctx.diagonalKm < 2 ? [...ctx.wikipedia].sort((a, b) => a.distanceKm - b.distanceKm)[0] : undefined;
 
 const norm = (v) => String(v || "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f\u064b-\u065f]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
@@ -77,7 +87,7 @@ function matchLabel(label, ctx) {
 // A label that matches a known security site comes first, then the other
 // labels. A security site the labels did not mention keeps one slot; plain
 // settlements are searched only when nothing else was found.
-function pickTargets(ctx, mapNames) {
+function pickTargets(ctx, mapNames, main) {
   const targets = [];
   const seen = new Set();
   const add = (name, known, aliases = []) => {
@@ -87,7 +97,17 @@ function pickTargets(ctx, mapNames) {
     targets.push({ name: name.trim(), known });
   };
 
-  const labels = mapNames.map((n) => ({ name: n, match: matchLabel(n, ctx) }));
+  // First and foremost: the thing that was marked, by the label inside the frame,
+  // or by the object the address lookup found at the center.
+  const subject = main || ctx.address?.featureName || centralArticle(ctx)?.title || "";
+  if (subject) {
+    const m = matchLabel(subject, ctx);
+    const english = m?.nameEn && norm(m.nameEn) !== norm(subject) ? m.nameEn : "";
+    const kind = ctx.address?.featureType ? `; map category ${ctx.address.featureType}` : "";
+    add(english || subject, `this is the feature that was marked: it fills the marked area${main ? ` and is printed on the map as "${main}"` : ""}${kind}${m?.known ? `; ${m.known}` : ""}`, [subject]);
+  }
+
+  const labels = mapNames.filter((n) => norm(n) !== norm(subject)).map((n) => ({ name: n, match: matchLabel(n, ctx) }));
   labels.sort((a, b) => Number(Boolean(b.match?.security)) - Number(Boolean(a.match?.security)));
 
   // Searches work best on the English name; the spelling on the map goes along.
@@ -120,7 +140,7 @@ function targetQuery(target, ctx) {
   return `Today is ${today}. Research this exact location only, not other places with a similar name.
 
 Name: ${target.name}
-Coordinates: ${ctx.center.lat.toFixed(4)}, ${ctx.center.lng.toFixed(4)}${ctx.diagonalKm >= 0.2 ? ` (center of a ${ctx.diagonalKm.toFixed(1)} km area that contains it)` : ""}
+Coordinates: ${ctx.center.lat.toFixed(5)}, ${ctx.center.lng.toFixed(5)}${ctx.point ? "" : ` (center of the marked area, ${fmtKmEn(ctx.widthKm)} by ${fmtKmEn(ctx.heightKm)})`}
 Administrative area: ${placeLine(ctx.address) || "unknown"}
 Known from map data: ${target.known || "nothing further"}
 
@@ -145,7 +165,7 @@ Answer in at most 5 short bullet points:
 Only these places, not the wider country or region. If nothing specific is found, answer exactly: No specific information found.`;
 }
 
-function synthesisPrompt(ctx, mapNames, own, research, allowedUrls) {
+function synthesisPrompt(ctx, mapNames, main, own, research, allowedUrls) {
   const sites = [
     ...ctx.sites.map((x) => `- ${x.name}: ${[x.type, x.description].filter(Boolean).join("; ")}${x.affiliation ? `. מפעיל/בעלים: ${x.affiliation}` : ""} [${x.url}]`),
     ...ctx.features.filter((f) => f.kind !== "place").map((f) => `- ${f.kindLabel}: ${[f.name, f.nameEn].filter((v, i, arr) => v && arr.indexOf(v) === i).join(" / ") || "ללא שם"}`),
@@ -159,11 +179,14 @@ function synthesisPrompt(ctx, mapNames, own, research, allowedUrls) {
 לפניך כל החומר שנאסף על שטח שסומן במפה. זהה ממנו את המקום וכתוב עליו סיכום קצר. אל תוסיף שום דבר שאינו בחומר.
 
 ## השטח
-${ctx.diagonalKm < 0.2 ? `נקודה: ${ctx.center.lat.toFixed(5)}, ${ctx.center.lng.toFixed(5)}` : `מלבן של ${fmtKm(ctx.widthKm)} על ${fmtKm(ctx.heightKm)}, מרכזו ${ctx.center.lat.toFixed(5)}, ${ctx.center.lng.toFixed(5)}`}
+${ctx.point ? `נקודה: ${ctx.center.lat.toFixed(5)}, ${ctx.center.lng.toFixed(5)}` : `מלבן של ${fmtKm(ctx.widthKm)} על ${fmtKm(ctx.heightKm)}, מרכזו ${ctx.center.lat.toFixed(5)}, ${ctx.center.lng.toFixed(5)}`}
 מיקום: ${ctx.address?.display || "לא אותר"}
 
-## זיהוי: כיתובים שנקראו מהמפה בתוך השטח (לפי סדר בולטות)
-${mapNames.length ? mapNames.join(", ") : "לא נקראו כיתובים."}
+## זיהוי: מה סומן
+כיתוב במרכז השטח המסומן: ${main || "לא נקרא"}
+העצם במרכז השטח לפי נתוני המפה: ${ctx.address?.featureName ? `${ctx.address.featureName}${ctx.address.featureType ? ` (${ctx.address.featureType})` : ""}` : "לא אותר"}
+ערך ויקיפדיה שממוקם הכי קרוב למרכז השטח: ${centralArticle(ctx) ? `${centralArticle(ctx).title}${centralArticle(ctx).description ? ` - ${centralArticle(ctx).description}` : ""}` : "אין"}
+כיתובים נוספים בתוך השטח: ${mapNames.filter((n) => n !== main).join(", ") || "אין"}
 
 ## אתרים ביטחוניים בתוך השטח (נתוני מפה מאומתים)
 ${sites.length ? sites.join("\n") : "לא נמצאו."}
@@ -184,14 +207,14 @@ ${own.length ? own.join(", ") : "אין."}
 ${findings.length ? findings.join("\n\n") : "החיפוש ברשת לא החזיר ממצאים."}
 
 ## מה להחזיר
-- area_name: שם המקום בעברית. זהה אותו לפי הכיתוב שנקרא מהמפה ולפי הנ"צ: הכיתוב הבולט ביותר שמתאים למיקום, ואחריו המחוז או המדינה. כיתוב שסותר את נתוני המיקום - העדף את נתוני המיקום.
-- summary: סיכום כללי של המקום בפסקה אחת, 3-5 משפטים: מה המקום ותפקידו הצבאי או הביטחוני, למי הוא קשור כיום (מי שולט בו, מפעיל אותו או מזוהה איתו, וממי למי אם זה התחלף), ורקע קצר. אירועים - רק אחד או שניים המשמעותיים ביותר, משולבים בטקסט עם תאריך. לא רשימה.
+- area_name: שם הדבר שסומן, בעברית (ובסוגריים בשפת המקור), ואחריו העיר או המדינה. זהה אותו לפי סעיף "זיהוי: מה סומן" - הכיתוב שבמרכז השטח והעצם שבמרכזו - ולא לפי מקום בולט אחר בסביבה.
+- summary: סיכום כללי של הדבר שסומן בפסקה אחת, 3-5 משפטים: מה המקום ותפקידו הצבאי או הביטחוני, למי הוא קשור כיום (מי שולט בו, מפעיל אותו או מזוהה איתו, וממי למי אם זה התחלף), ורקע קצר. אירועים - רק אחד או שניים המשמעותיים ביותר, משולבים בטקסט עם תאריך. לא רשימה.
 - source_urls: 2-4 הקישורים הרלוונטיים ביותר על המקום עצמו, אך ורק מהרשימה הזו:
 ${allowedUrls.length ? allowedUrls.join("\n") : "(אין)"}
 
 ## חוקים
 - רק מה שמופיע בחומר למעלה. אל תוסיף מידע מהזיכרון, ואל תמציא שמות, תאריכים, מספרים או שיוך.
-- רק מה שבתוך השטח המסומן. ממצא על מקום אחר בעל שם דומה, או על המדינה באופן כללי - השמט.
+- הסיכום עוסק בדבר שסומן. מקומות סמוכים שאינם חלק ממנו - השמט, גם אם יש עליהם הרבה מידע. ממצא על מקום אחר בעל שם דומה, או על העיר והמדינה באופן כללי - השמט.
 - כשממצאי החיפוש סותרים את נתוני המפה לגבי מי מפעיל אתר, העדף את המידע העדכני יותר וציין את השינוי.
 - טענה של צד אחד בלבד - כתוב "לפי" ושם הטוען.
 - סגנון: תמציתי ועובדתי, כמו סיכום מודיעין. בלי הקדמות, בלי הסתייגויות כלליות, בלי "חשוב לציין", ובלי לחזור על הקואורדינטות.
@@ -295,9 +318,13 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
     const center = bounds.getCenter();
     const lat = center.lat.toFixed(5);
     const lng = center.lng.toFixed(5);
-    const meters = center.distanceTo(bounds.getNorthEast());
+    // A click, or a drag of a few pixels, is a point; anything drawn is an area,
+    // however small - a stadium or a single building is a valid area.
+    const nw = map.latLngToContainerPoint(bounds.getNorthWest());
+    const se = map.latLngToContainerPoint(bounds.getSouthEast());
+    const isPoint = Math.abs(se.x - nw.x) < 12 && Math.abs(se.y - nw.y) < 12;
 
-    if (meters < 100) {
+    if (isPoint) {
       highlightRef.current = L.circleMarker(center, {
         radius: 7,
         color: "#f59e0b",
@@ -319,7 +346,7 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
     }
 
     const box = { south: bounds.getSouth(), north: bounds.getNorth(), west: bounds.getWest(), east: bounds.getEast() };
-    const { search } = normalizeBox(box);
+    const { search } = normalizeBox(box, { point: isPoint });
     const own = ownMarkings(L.latLngBounds([search.south, search.west], [search.north, search.east]));
 
     // The map's text is read from the OpenStreetMap map of the area, whatever layer
@@ -328,13 +355,13 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
     const readMapText = async () => {
       let image = null;
       try {
-        image = await renderMapTextImage(search, map.getZoom());
+        image = await renderMapTextImage(box, map.getZoom(), { point: isPoint });
       } catch (e) {
         if (LAYERS_WITH_TEXT.includes(tileMode)) {
           try { image = await captureArea(map, bounds); } catch (err) {}
         }
       }
-      if (!image) return [];
+      if (!image) return { main: "", names: [] };
       try {
         const labels = await base44.integrations.Core.InvokeLLM({
           prompt: LABELS_PROMPT,
@@ -343,22 +370,24 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
           quality: "high",
           thinking: false
         });
-        return [...new Set((labels?.names || []).map((n) => String(n).trim()).filter(Boolean))].slice(0, 10);
+        const main = String(labels?.main || "").trim();
+        const names = [...new Set([main, ...(labels?.names || [])].map((n) => String(n || "").trim()).filter(Boolean))].slice(0, 8);
+        return { main, names };
       } catch (e) {
-        return [];
+        return { main: "", names: [] };
       }
     };
 
     try {
       // 1. Identification: the names printed on the map, together with the coordinates and the map data.
-      const [ctx, readNames] = await Promise.all([gatherAreaContext(box), readMapText()]);
+      const [ctx, { main, names: readNames }] = await Promise.all([gatherAreaContext(box, { point: isPoint }), readMapText()]);
 
       // 2. A focused web search on each identified place, plus one for the area as a whole.
-      const targets = pickTargets(ctx, readNames);
-      const queries = [
-        ...targets.map((t) => ({ subject: t.name, prompt: targetQuery(t, ctx) })),
-        { subject: "השטח כולו", prompt: overviewQuery(ctx) },
-      ];
+      const targets = pickTargets(ctx, readNames, main);
+      const queries = targets.map((t) => ({ subject: t.name, prompt: targetQuery(t, ctx) }));
+      // A wide area also gets a search on the area as a whole; a small one is
+      // about the thing that was marked, and a general search would drift.
+      if (ctx.diagonalKm > 3 || !queries.length) queries.push({ subject: "השטח כולו", prompt: overviewQuery(ctx) });
       const answers = await Promise.allSettled(
         queries.map((q) => invokeLLMDetailed({ prompt: q.prompt, add_context_from_internet: true, search_only: true, max_tokens: 600 }))
       );
@@ -379,7 +408,7 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
       ctx.wikipedia.slice(0, 8).forEach((w) => titles.set(w.url, w.title));
       [...ctx.sites, ...ctx.events].forEach((x) => titles.set(x.url, x.name));
       const res = await base44.integrations.Core.InvokeLLM({
-        prompt: synthesisPrompt(ctx, readNames, own, research, [...titles.keys()].slice(0, 30)),
+        prompt: synthesisPrompt(ctx, readNames, main, own, research, [...titles.keys()].slice(0, 30)),
         response_json_schema: SCHEMA,
         quality: "high",
         thinking: false,
@@ -400,7 +429,7 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
         summary: res?.summary || "",
         sources,
         names,
-        coords: ctx.diagonalKm < 0.2
+        coords: ctx.point
           ? `נקודה · ${lat}, ${lng}`
           : `שטח ${fmtKm(ctx.widthKm)} × ${fmtKm(ctx.heightKm)} · מרכז ${lat}, ${lng}`,
         noWebSearch: !searched
