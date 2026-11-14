@@ -16,6 +16,7 @@ import ResearcherTool from "./ResearcherTool";
 import LiveLayer from "./LiveLayer";
 import { flagUrl } from "@/lib/flags";
 import { createClusterGroup } from "@/lib/markerCluster";
+import { LabelDeclutter } from "@/lib/labelDeclutter";
 
 function makeIcon(color = "#3b82f6") {
   return new L.DivIcon({
@@ -214,13 +215,6 @@ function ShapesLayer({ subscribe, getShapes, onShapeClick }) {
             weight: 2.5
           }
         });
-        if (shape.label) {
-          lyr.bindTooltip(shape.label, {
-            permanent: true,
-            direction: "center",
-            className: "shape-label-tooltip"
-          });
-        }
         lyr.on("click", () => onShapeClickRef.current(shape));
         groupRef.current.addLayer(lyr);
       } catch (e) {}
@@ -288,41 +282,31 @@ function PointsLayer({ subscribe, getPoints, getTopicColor, onDelete }) {
   return null;
 }
 
-function PlaceLabelsLayer({ labels }) {
+// Shape names and place labels, drawn without overlap; see labelDeclutter.js.
+function MapLabelsLayer({ subscribe, getShapes, labels }) {
   const map = useMap();
-  const groupRef = useRef(null);
+  const declutterRef = useRef(null);
+  const labelsRef = useRef(labels);
+  labelsRef.current = labels;
 
   useEffect(() => {
     if (!map) return;
-    if (groupRef.current) groupRef.current.clearLayers();
-    else groupRef.current = L.featureGroup().addTo(map);
+    const declutter = new LabelDeclutter(map);
+    declutterRef.current = declutter;
+    const update = () => declutter.setData(getShapes(), labelsRef.current || []);
+    update();
+    const unsub = subscribe(update);
+    return () => {
+      unsub();
+      declutter.destroy();
+      declutterRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map]);
 
-    const sizeMap = { small: 11, medium: 14, large: 18 };
-
-    labels.forEach((lbl) => {
-      if (!lbl.latitude || !lbl.longitude) return;
-      const fontSize = sizeMap[lbl.font_size] || 14;
-      const icon = new L.DivIcon({
-        className: "",
-        html: `<div style="
-          color: ${lbl.color || "#facc15"};
-          font-family: 'JetBrains Mono', monospace;
-          font-size: ${fontSize}px;
-          font-weight: 700;
-          text-shadow: 0 0 6px #000, 0 0 12px #000, 1px 1px 0 #000, -1px -1px 0 #000;
-          white-space: nowrap;
-          pointer-events: none;
-          user-select: none;
-        ">${lbl.name}</div>`,
-        iconSize: [0, 0],
-        iconAnchor: [0, 0]
-      });
-      const marker = L.marker([lbl.latitude, lbl.longitude], { icon, interactive: false });
-      groupRef.current.addLayer(marker);
-    });
-
-    return () => { if (groupRef.current) groupRef.current.clearLayers(); };
-  }, [map, labels]);
+  useEffect(() => {
+    declutterRef.current?.setData(getShapes(), labels || []);
+  }, [labels, getShapes]);
 
   return null;
 }
@@ -550,7 +534,7 @@ export default function ThreatMap({
           }
         }} />
         <ShapesLayer subscribe={subscribe} getShapes={getShapes} onShapeClick={handleShapeClick} />
-        <PlaceLabelsLayer labels={placeLabels} />
+        <MapLabelsLayer subscribe={subscribe} getShapes={getShapes} labels={placeLabels} />
         <PointsLayer subscribe={subscribe} getPoints={getPoints} getTopicColor={getTopicColor} onDelete={onPoiDelete} />
         <LiveLayer
           subscribe={subscribe}

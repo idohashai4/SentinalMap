@@ -120,23 +120,6 @@
   color: hsl(215 20% 55%) !important;
 }
 
-.shape-label-tooltip {
-  background: rgba(0, 0, 0, 0.75) !important;
-  border: 1px solid rgba(255,255,255,0.15) !important;
-  border-radius: 4px !important;
-  color: #fff !important;
-  font-family: 'JetBrains Mono', monospace !important;
-  font-size: 11px !important;
-  font-weight: 600 !important;
-  padding: 2px 6px !important;
-  white-space: nowrap !important;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.4) !important;
-}
-
-.shape-label-tooltip::before {
-  display: none !important;
-}
-
 .marker-cluster-badge {
   display: flex;
   align-items: center;
@@ -163,4 +146,57 @@
   .leaflet-control-zoom {
     display: none;
   }
+}
+
+/* Names on the map, placed without overlap (see src/lib/labelDeclutter.js) */
+.leaflet-labelsPane-pane {
+  transition: opacity 0.15s;
+}
+.map-label-anchor {
+  overflow: visible;
+}
+.map-shape-label,
+.map-place-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+.map-shape-label {
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  color: #fff;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+.map-place-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  text-shadow: 0 0 6px #000, 0 0 12px #000, 1px 1px 0 #000, -1px -1px 0 #000;
+}
+.map-label-badge {
+  /* Outside the name, to its right, so the name stays centred on its place. */
+  position: absolute;
+  left: calc(100% + 3px);
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: auto;
+  cursor: pointer;
+  border: 0;
+  border-radius: 9px;
+  padding: 0 5px;
+  min-width: 20px;
+  height: 16px;
+  line-height: 16px;
+  background: hsl(var(--primary));
+  color: #fff;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  text-shadow: none;
 }

@@ -265,7 +265,7 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
     const container = map.getContainer();
     // Only the basemap is photographed: the researcher's own labels, markers and
     // shapes would otherwise be read back as if they were printed on the map.
-    const hidden = ["leaflet-tooltip-pane", "leaflet-marker-pane", "leaflet-overlay-pane", "leaflet-popup-pane", "leaflet-control-container"];
+    const hidden = ["leaflet-tooltip-pane", "leaflet-labelsPane-pane", "leaflet-marker-pane", "leaflet-overlay-pane", "leaflet-popup-pane", "leaflet-control-container"];
     const shot = await html2canvas(container, {
       useCORS: true,
       backgroundColor: "#0b1220",
