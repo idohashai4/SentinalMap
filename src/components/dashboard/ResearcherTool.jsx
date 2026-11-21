@@ -323,13 +323,13 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
     const { search } = normalizeBox(box, { point: isPoint });
     const own = ownMarkings(L.latLngBounds([search.south, search.west], [search.north, search.east]));
 
-    // The map's text is read from the OpenStreetMap map of the area, whatever layer
-    // is on screen. If its tiles cannot be loaded, the screen itself is read
-    // instead, when the layer on it prints text.
+    // The map's text is read from the area as drawn at the zoom the user marked
+    // it at, so the labels read are the ones that were visible. If the tiles
+    // cannot be loaded, the screen itself is read, when its layer prints text.
     const readMapText = async () => {
       let image = null;
       try {
-        image = await renderMapTextImage(box, map.getZoom(), { point: isPoint });
+        image = await renderMapTextImage(box, { zoom: map.getZoom(), layer: tileMode, point: isPoint });
       } catch (e) {
         if (LAYERS_WITH_TEXT.includes(tileMode)) {
           try { image = await captureArea(map, bounds); } catch (err) {}

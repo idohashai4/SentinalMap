@@ -1,36 +1,33 @@
-// Draws the OpenStreetMap map (the MAP layer, which prints place and site names)
-// for an area straight from its tiles, whatever layer is on screen. The image is
-// what the researcher reads the map's text from, so it works on SAT as well.
+// Draws the marked area exactly as the map shows it at the zoom the user was at
+// when marking it, straight from the tiles of the layer on screen. The labels in
+// this image are therefore the same labels the user saw: zooming in shows more
+// detailed names (neighbourhoods, sites), zooming out only the major ones, and
+// the researcher reads whatever was visible.
+//
+// SAT prints no text, so for it the OpenStreetMap map (the MAP layer) is drawn
+// instead, at the same zoom. The researcher's own shapes, markers and names are
+// never in the image: only the basemap tiles are.
 
-const TILE_URL = (z, x, y) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
 const TILE = 256;
-const MAX_ZOOM = 19;
-const MAX_TILES = 16;       // at most a 4×4 block: ~1 MB of image, one quick request
-const TARGET_WIDTH = 640;   // zoom in until the area is at least this wide, so labels are legible
+const MIN_READABLE = 560;   // small areas are enlarged to at least this width so the text is legible
+const MAX_SCALE = 3;
+
+const ESRI = (service) => `https://server.arcgisonline.com/ArcGIS/rest/services/${service}/MapServer/tile/{z}/{y}/{x}`;
+const OSM = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+
+// The tile sets each map layer is drawn from, bottom to top.
+const LAYER_TILES = {
+  street: [OSM],
+  esri_street: [ESRI("World_Street_Map")],
+  hybrid: [ESRI("World_Imagery"), ESRI("Reference/World_Boundaries_and_Places")],
+  satellite: [OSM],
+};
 
 const lngToX = (lng, z) => ((lng + 180) / 360) * 2 ** z;
 const latToY = (lat, z) => {
   const r = (lat * Math.PI) / 180;
   return ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * 2 ** z;
 };
-
-function tileRange(box, z) {
-  const x0 = Math.floor(lngToX(box.west, z));
-  const x1 = Math.floor(lngToX(box.east, z));
-  const y0 = Math.floor(latToY(box.north, z));
-  const y1 = Math.floor(latToY(box.south, z));
-  return { x0, x1, y0, y1, count: (x1 - x0 + 1) * (y1 - y0 + 1) };
-}
-
-// The most detailed zoom at which the area still fits in MAX_TILES tiles,
-// starting from what is on screen and zooming in while the area is small.
-function chooseZoom(box, screenZoom) {
-  let z = Math.max(3, Math.min(MAX_ZOOM, Math.round(screenZoom)));
-  const width = (zoom) => (lngToX(box.east, zoom) - lngToX(box.west, zoom)) * TILE;
-  while (z < MAX_ZOOM && width(z) < TARGET_WIDTH && tileRange(box, z + 1).count <= MAX_TILES) z++;
-  while (z > 3 && tileRange(box, z).count > MAX_TILES) z--;
-  return z;
-}
 
 function loadTile(url) {
   return new Promise((resolve, reject) => {
@@ -42,53 +39,78 @@ function loadTile(url) {
   });
 }
 
-// Returns a PNG data URL of the area on the OpenStreetMap map, with a margin
-// around it so labels on its edge are not cut, and the marked area itself
-// framed in orange (a ring for a single click).
-export async function renderMapTextImage(marked, screenZoom, { point = false } = {}) {
-  const center = { lat: (marked.south + marked.north) / 2, lng: (marked.west + marked.east) / 2 };
-  const kmPerLng = 111 * Math.max(0.2, Math.cos((center.lat * Math.PI) / 180));
-  const padLat = point ? 0.12 / 111 : Math.max((marked.north - marked.south) * 0.25, 0.04 / 111);
-  const padLng = point ? 0.12 / kmPerLng : Math.max((marked.east - marked.west) * 0.25, 0.04 / kmPerLng);
-  const box = { south: marked.south - padLat, north: marked.north + padLat, west: marked.west - padLng, east: marked.east + padLng };
-  const z = chooseZoom(box, screenZoom);
-  const { x0, x1, y0, y1 } = tileRange(box, z);
+async function drawLayers(templates, box, z) {
+  const x0 = Math.floor(lngToX(box.west, z));
+  const x1 = Math.floor(lngToX(box.east, z));
+  const y0 = Math.floor(latToY(box.north, z));
+  const y1 = Math.floor(latToY(box.south, z));
   const canvas = document.createElement("canvas");
   canvas.width = (x1 - x0 + 1) * TILE;
   canvas.height = (y1 - y0 + 1) * TILE;
   const ctx = canvas.getContext("2d");
-
-  const jobs = [];
-  for (let x = x0; x <= x1; x++) {
-    for (let y = y0; y <= y1; y++) {
-      jobs.push(loadTile(TILE_URL(z, x, y)).then((img) => ctx.drawImage(img, (x - x0) * TILE, (y - y0) * TILE)));
+  for (const template of templates) {
+    const jobs = [];
+    for (let x = x0; x <= x1; x++) {
+      for (let y = y0; y <= y1; y++) {
+        const url = template.replace("{z}", z).replace("{x}", x).replace("{y}", y);
+        jobs.push(loadTile(url).then((img) => ({ img, x, y })));
+      }
     }
+    const loaded = await Promise.allSettled(jobs);
+    const ok = loaded.filter((r) => r.status === "fulfilled").map((r) => r.value);
+    if (!ok.length) throw new Error("map tiles unavailable");
+    ok.forEach(({ img, x, y }) => ctx.drawImage(img, (x - x0) * TILE, (y - y0) * TILE));
   }
-  const loaded = await Promise.allSettled(jobs);
-  if (loaded.every((r) => r.status === "rejected")) throw new Error("map tiles unavailable");
+  return { canvas, x0, y0 };
+}
 
-  // Crop the tile block to the area itself.
-  const left = Math.round((lngToX(box.west, z) - x0) * TILE);
-  const top = Math.round((latToY(box.north, z) - y0) * TILE);
-  const width = Math.max(1, Math.round((lngToX(box.east, z) - x0) * TILE) - left);
-  const height = Math.max(1, Math.round((latToY(box.south, z) - y0) * TILE) - top);
-  const crop = document.createElement("canvas");
-  crop.width = width;
-  crop.height = height;
-  const out = crop.getContext("2d");
-  out.drawImage(canvas, left, top, width, height, 0, 0, width, height);
+// Returns a PNG data URL of the marked area, with a small margin around it so
+// labels on its edge are not cut, and the marked area framed in orange (a ring
+// for a single click).
+export async function renderMapTextImage(marked, { zoom, layer = "street", point = false }) {
+  const z = Math.max(1, Math.min(19, Math.round(zoom)));
+  const center = { lat: (marked.south + marked.north) / 2, lng: (marked.west + marked.east) / 2 };
 
-  // Frame what was marked.
-  const px = (lng) => (lngToX(lng, z) - x0) * TILE - left;
-  const py = (lat) => (latToY(lat, z) - y0) * TILE - top;
-  out.strokeStyle = "#f97316";
-  out.lineWidth = 4;
+  // Margin: a quarter of the area on each side, at least ~40 screen pixels.
+  const degPerPxLng = 360 / (TILE * 2 ** z);
+  const degPerPxLat = degPerPxLng * Math.cos((center.lat * Math.PI) / 180);
+  const padLng = point ? degPerPxLng * 80 : Math.max((marked.east - marked.west) * 0.25, degPerPxLng * 40);
+  const padLat = point ? degPerPxLat * 80 : Math.max((marked.north - marked.south) * 0.25, degPerPxLat * 40);
+  const box = { south: marked.south - padLat, north: marked.north + padLat, west: marked.west - padLng, east: marked.east + padLng };
+
+  let drawn;
+  try {
+    drawn = await drawLayers(LAYER_TILES[layer] || [OSM], box, z);
+  } catch (e) {
+    if ((LAYER_TILES[layer] || [OSM])[0] === OSM) throw e;
+    drawn = await drawLayers([OSM], box, z);   // the layer's own tiles refused to load: OSM instead
+  }
+  const { canvas, x0, y0 } = drawn;
+
+  const left = (lngToX(box.west, z) - x0) * TILE;
+  const top = (latToY(box.north, z) - y0) * TILE;
+  const width = Math.max(1, (lngToX(box.east, z) - x0) * TILE - left);
+  const height = Math.max(1, (latToY(box.south, z) - y0) * TILE - top);
+
+  // Same zoom, same labels - only enlarged when the area is small on screen.
+  const scale = Math.min(MAX_SCALE, Math.max(1, MIN_READABLE / width));
+  const out = document.createElement("canvas");
+  out.width = Math.round(width * scale);
+  out.height = Math.round(height * scale);
+  const g = out.getContext("2d");
+  g.imageSmoothingQuality = "high";
+  g.drawImage(canvas, left, top, width, height, 0, 0, out.width, out.height);
+
+  const px = (lng) => ((lngToX(lng, z) - x0) * TILE - left) * scale;
+  const py = (lat) => ((latToY(lat, z) - y0) * TILE - top) * scale;
+  g.strokeStyle = "#f97316";
+  g.lineWidth = 4;
   if (point) {
-    out.beginPath();
-    out.arc(px(center.lng), py(center.lat), 18, 0, Math.PI * 2);
-    out.stroke();
+    g.beginPath();
+    g.arc(px(center.lng), py(center.lat), 18, 0, Math.PI * 2);
+    g.stroke();
   } else {
-    out.strokeRect(px(marked.west), py(marked.north), px(marked.east) - px(marked.west), py(marked.south) - py(marked.north));
+    g.strokeRect(px(marked.west), py(marked.north), px(marked.east) - px(marked.west), py(marked.south) - py(marked.north));
   }
-  return crop.toDataURL("image/png");
+  return out.toDataURL("image/png");
 }
