@@ -1,10 +1,10 @@
-import React, { useRef, useState } from "react";
+import React, { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 import L from "leaflet";
 import { Radar, Loader2, X, ExternalLink } from "lucide-react";
 import { base44, invokeLLMDetailed } from "@/api/base44Client";
 import { useToast } from "@/components/ui/use-toast";
-import { gatherAreaContext, normalizeBox } from "@/lib/areaContext";
+import { gatherAreaContext, localLanguage, normalizeBox } from "@/lib/areaContext";
 import { renderMapTextImage } from "@/lib/mapTextImage";
 
 // What the researcher reports: the identified place and a short summary of it.
@@ -25,7 +25,7 @@ const LABELS_SCHEMA = {
   }
 };
 
-const LABELS_PROMPT = `התמונה היא קטע ממפת OpenStreetMap. השטח שסומן מוקף במסגרת כתומה (או בעיגול כתום אם סומנה נקודה). מסביב למסגרת יש שוליים רק לצורך הקשר.
+const LABELS_PROMPT = `התמונה היא קטע ממפת OpenStreetMap. השטח שסומן מוקף בקו כתום - מלבן או צורה חופשית (או עיגול כתום אם סומנה נקודה). מסביב למסגרת יש שוליים רק לצורך הקשר.
 תפקידך לקרוא את הכיתובים שמודפסים על המפה.
 
 - main: שם הדבר שממלא את המסגרת הכתומה או נמצא במרכזה (למשל אצטדיון, בסיס, נמל, מבנה, שכונה), בדיוק כפי שהוא כתוב. רק כיתוב שנמצא בתוך המסגרת או נוגע בה, לא כיתוב שבשוליים מסביב. אם אין כזה - מחרוזת ריקה.
@@ -41,6 +41,15 @@ const LABELS_PROMPT = `התמונה היא קטע ממפת OpenStreetMap. השט
 const LAYERS_WITH_TEXT = ["street", "esri_street", "hybrid"];
 
 const fmtKmEn = (n) => (n < 1 ? `${Math.round(n * 1000)} m` : `${n.toFixed(1)} km`);
+// The outer rings of a polygon GeoJSON, as [lng, lat] lists.
+function polygonRings(geojson) {
+  const geom = geojson.type === "Feature" ? geojson.geometry : geojson;
+  if (!geom) return null;
+  if (geom.type === "Polygon") return [geom.coordinates[0]];
+  if (geom.type === "MultiPolygon") return geom.coordinates.map((p) => p[0]);
+  return null;
+}
+
 const fmtKm = (n) => (n < 1 ? `${Math.round(n * 1000)} מ'` : `${n.toFixed(1)} ק"מ`);
 
 // What is verifiably inside the marked area. Security sites always go in;
@@ -157,6 +166,23 @@ Answer in at most 5 short bullet points:
 Only these places, not the wider country or region. If nothing specific is found, answer exactly: No specific information found.`;
 }
 
+// The second search: the same subject, in the language local sources are written in.
+// Local outlets cover small places, units and incidents that never reach English media.
+function localQuery(subject, lang, ctx, extra) {
+  const today = new Date().toISOString().slice(0, 10);
+  return `Today is ${today}. Search ${lang.name}-language sources only: local and regional news sites, local authorities, official statements and well-known local channels written in ${lang.name}. Search in ${lang.name}, using the ${lang.name} name of the place.
+
+Subject: ${subject}
+Location, only to make sure it is the right place: ${locationLine(ctx)}.${extra ? `\n${extra}` : ""}
+
+Answer in English, in at most 6 short bullet points, each with the outlet it came from:
+- What the place is, and what is in it or at it: military or security sites, forces, units and organisations.
+- Who it is tied to now (who controls, operates or is identified with it), and any change with its date.
+- Significant events there, with dates, especially ones reported only locally.
+
+If ${lang.name}-language sources have nothing specific on this place, answer exactly: No specific information found.`;
+}
+
 function synthesisPrompt({ ctx, label, subject, material, research, allowedUrls }) {
   const findings = research.map((r) => `### ${r.subject}\n${r.text}`);
   const where = `${ctx.address?.display || "לא אותר"} (נ"צ ${ctx.center.lat.toFixed(5)}, ${ctx.center.lng.toFixed(5)})`;
@@ -191,11 +217,12 @@ ${allowedUrls.length ? allowedUrls.join("\n") : "(אין)"}
 - כשהנושא הוא יישוב או אזור, "מה יש בו" כולל אתרים, כוחות וגופים שנמצאים בתוכו. כשהנושא הוא בסיס או מתקן - מי מפעיל אותו ומה יש בו.
 - כשממצאי החיפוש סותרים את נתוני המפה לגבי מי מפעיל אתר, העדף את המידע העדכני יותר וציין את השינוי.
 - טענה של צד אחד בלבד - כתוב "לפי" ושם הטוען.
+- חלק מהממצאים מגיעים ממקורות בשפה המקומית. כתוב הכל בעברית: תרגם את הממצאים, ושמות מקומות, ארגונים ואנשים כתוב בעברית ובסוגריים בשפת המקור.
 - סגנון: תמציתי ועובדתי, כמו סיכום מודיעין. בלי הקדמות, בלי הסתייגויות כלליות, בלי "חשוב לציין", ובלי לחזור על הקואורדינטות.
 - אין מידע על המקום: summary של משפט אחד שאומר זאת.`;
 }
 
-export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shapes = [], pois = [], placeLabels = [] }) {
+const ResearcherTool = forwardRef(function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shapes = [], pois = [], placeLabels = [] }, ref) {
   const [active, setActive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -284,7 +311,9 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
     return [...names].slice(0, 12);
   };
 
-  const research = async (map, bounds) => {
+  // `shape`: when researching one of the user's own polygons - its GeoJSON,
+  // label, layer and notes.
+  const research = async (map, bounds, { shape = null } = {}) => {
     setLoading(true);
     setResult(null);
     clearHighlight();
@@ -296,9 +325,13 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
     // however small - a stadium or a single building is a valid area.
     const nw = map.latLngToContainerPoint(bounds.getNorthWest());
     const se = map.latLngToContainerPoint(bounds.getSouthEast());
-    const isPoint = Math.abs(se.x - nw.x) < 12 && Math.abs(se.y - nw.y) < 12;
+    const isPoint = !shape && Math.abs(se.x - nw.x) < 12 && Math.abs(se.y - nw.y) < 12;
 
-    if (isPoint) {
+    if (shape) {
+      highlightRef.current = L.geoJSON(shape.geojson, {
+        style: { color: "#f59e0b", weight: 3, fill: false, dashArray: "6 4" }
+      }).addTo(map);
+    } else if (isPoint) {
       highlightRef.current = L.circleMarker(center, {
         radius: 7,
         color: "#f59e0b",
@@ -329,7 +362,7 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
     const readMapText = async () => {
       let image = null;
       try {
-        image = await renderMapTextImage(box, { zoom: map.getZoom(), layer: tileMode, point: isPoint });
+        image = await renderMapTextImage(box, { zoom: map.getZoom(), layer: tileMode, point: isPoint, outline: shape ? polygonRings(shape.geojson) : null });
       } catch (e) {
         if (LAYERS_WITH_TEXT.includes(tileMode)) {
           try { image = await captureArea(map, bounds); } catch (err) {}
@@ -385,6 +418,26 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
         // Recorded events and the researcher's own markings at this spot help place it.
         ctx.events.slice(0, 4).forEach((e) => { material.push(`- אירוע שתועד בנקודה ${e.date || ""}: ${e.name} [${e.url}]`); titles.set(e.url, e.name); });
         if (own.length) material.push(`- סימונים של החוקר עצמו בנקודה: ${own.join(", ")}`);
+      }
+
+      // The researcher's own polygon: their label and notes, as context only.
+      const shapeHint = shape
+        ? `The researcher's own label for this area: "${shape.label || "unnamed"}" (layer ${shape.layer || "default"}).`
+        : "";
+      if (shape) {
+        material.push(`- התווית שהחוקר נתן לשטח: ${shape.label || "ללא"} (שכבה ${shape.layer || "default"})`);
+        shape.notes.forEach((n) => material.push(`- הערת החוקר: ${n}`));
+        if (shapeHint) queries.forEach((q) => { q.prompt += `\n\n${shapeHint}`; });
+      }
+
+      // The same subject again in the local language, in parallel.
+      const lang = localLanguage(ctx.address?.countryCode);
+      if (lang && queries.length) {
+        const first = queries[0];
+        queries.push({
+          subject: `${first.subject} (מקורות ב${lang.nameHe})`,
+          prompt: localQuery(first.subject, lang, ctx, [label && `Printed on the map as: "${label}"`, shapeHint].filter(Boolean).join("\n")),
+        });
       }
 
       const answers = await Promise.allSettled(
@@ -478,6 +531,34 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
     drawer.enable();
   };
 
+  // Research one of the user's own polygons: bring it fully into view at a zoom
+  // that suits it, then read and search it like a marked area.
+  const researchShape = async (shapeRow) => {
+    const map = mapRef.current;
+    if (!map || loading) return;
+    let geojson;
+    try { geojson = JSON.parse(shapeRow.geojson); } catch (e) { return; }
+    const bounds = L.geoJSON(geojson).getBounds();
+    if (!bounds.isValid()) return;
+    setResult(null);
+    await new Promise((resolve) => {
+      map.once("moveend", resolve);
+      map.fitBounds(bounds, { padding: [70, 70], maxZoom: 17, animate: false });
+      setTimeout(resolve, 1200);
+    });
+    let notes = [];
+    try {
+      const rows = await base44.entities.layer_notes.filter({ shape_id: shapeRow.id }, { sort: "-created_date", limit: 6 });
+      notes = rows
+        .map((n) => (n.kind === "text" ? n.text : n.title || n.url))
+        .filter(Boolean)
+        .map((t) => String(t).replace(/\s+/g, " ").slice(0, 300));
+    } catch (e) {}
+    research(map, bounds, { shape: { geojson, label: shapeRow.label, layer: shapeRow.layer_name, notes } });
+  };
+
+  useImperativeHandle(ref, () => ({ researchShape }));
+
   const close = () => {
     setResult(null);
     clearHighlight();
@@ -569,5 +650,6 @@ export default function ResearcherTool({ mapRef, suppressDrawRef, tileMode, shap
       )}
     </>
   );
-}
+});
 
+export default ResearcherTool;

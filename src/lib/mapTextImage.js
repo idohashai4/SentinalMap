@@ -67,7 +67,8 @@ async function drawLayers(templates, box, z) {
 // Returns a PNG data URL of the marked area, with a small margin around it so
 // labels on its edge are not cut, and the marked area framed in orange (a ring
 // for a single click).
-export async function renderMapTextImage(marked, { zoom, layer = "street", point = false }) {
+// `outline`, when given, is the polygon that was marked: rings of [lng, lat].
+export async function renderMapTextImage(marked, { zoom, layer = "street", point = false, outline = null }) {
   const z = Math.max(1, Math.min(19, Math.round(zoom)));
   const center = { lat: (marked.south + marked.north) / 2, lng: (marked.west + marked.east) / 2 };
 
@@ -105,7 +106,14 @@ export async function renderMapTextImage(marked, { zoom, layer = "street", point
   const py = (lat) => ((latToY(lat, z) - y0) * TILE - top) * scale;
   g.strokeStyle = "#f97316";
   g.lineWidth = 4;
-  if (point) {
+  if (outline) {
+    g.beginPath();
+    for (const ring of outline) {
+      ring.forEach(([lng, lat], i) => (i ? g.lineTo(px(lng), py(lat)) : g.moveTo(px(lng), py(lat))));
+      g.closePath();
+    }
+    g.stroke();
+  } else if (point) {
     g.beginPath();
     g.arc(px(center.lng), py(center.lat), 18, 0, Math.PI * 2);
     g.stroke();

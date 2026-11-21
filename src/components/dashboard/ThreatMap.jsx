@@ -338,6 +338,7 @@ export default function ThreatMap({
 }) {
   const [tileMode, setTileMode] = useState("satellite");
   const mapRef = useRef(null);
+  const researcherRef = useRef(null);
   const suppressDrawRef = useRef(false);
 
   // Shapes saved in this session render immediately, even before the server list catches up.
@@ -441,6 +442,12 @@ export default function ThreatMap({
     setInfoShape(null);
   };
 
+  const researchFromInfo = () => {
+    const target = infoShape;
+    closeInfoPanel();
+    researcherRef.current?.researchShape(target);
+  };
+
   const editShapeFromInfo = () => {
     setEditingShape(infoShape);
     closeInfoPanel();
@@ -483,7 +490,7 @@ export default function ThreatMap({
       </div>
 
       <div className="relative w-fit ml-auto flex items-center gap-1 pointer-events-auto">
-        <ResearcherTool mapRef={mapRef} suppressDrawRef={suppressDrawRef} tileMode={tileMode} shapes={filteredShapes} pois={visiblePoints} placeLabels={placeLabels} />
+        <ResearcherTool ref={researcherRef} mapRef={mapRef} suppressDrawRef={suppressDrawRef} tileMode={tileMode} shapes={filteredShapes} pois={visiblePoints} placeLabels={placeLabels} />
         <TranslationTool mapRef={mapRef} suppressDrawRef={suppressDrawRef} />
       </div>
       </div>
@@ -558,6 +565,7 @@ export default function ThreatMap({
           shape={infoShape}
           onClose={closeInfoPanel}
           onEditShape={editShapeFromInfo}
+          onResearch={researchFromInfo}
         />
       )}
 

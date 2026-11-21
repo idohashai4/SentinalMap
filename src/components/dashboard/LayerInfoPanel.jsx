@@ -2,12 +2,12 @@ import React from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Info, Loader2, Pencil, X } from "lucide-react";
+import { Info, Loader2, Pencil, Radar, X } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import LayerNoteForm from "./LayerNoteForm";
 import LayerNoteItem from "./LayerNoteItem";
 
-export default function LayerInfoPanel({ shape, onClose, onEditShape }) {
+export default function LayerInfoPanel({ shape, onClose, onEditShape, onResearch }) {
   const queryClient = useQueryClient();
   const shapeId = shape?.id;
   const layerName = shape?.layer_name || "default";
@@ -39,6 +39,15 @@ export default function LayerInfoPanel({ shape, onClose, onEditShape }) {
             <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-white/40 truncate" dir="auto">מידע נוסף · שכבה {layerName}</p>
             <h3 className="text-sm font-mono font-bold text-white truncate" dir="auto">{shape?.label || "אלמנט ללא שם"}</h3>
           </div>
+          {onResearch && (
+            <button
+              onClick={onResearch}
+              title="חקור את השטח הזה"
+              className="flex items-center gap-1 rounded border border-amber-400/40 px-1.5 py-0.5 text-[10px] font-mono text-amber-300 hover:bg-amber-400/10 transition-colors shrink-0"
+            >
+              <Radar className="w-3 h-3" /> חקור
+            </button>
+          )}
           {onEditShape && (
             <button
               onClick={onEditShape}

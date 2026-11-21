@@ -28,6 +28,38 @@ const LOCAL_WIKI = {
   ml: "fr", ne: "fr", td: "fr", bf: "fr", cd: "fr", ve: "es", co: "es", mx: "es", cu: "es",
 };
 
+// The language local sources are written in, by country code, for the
+// researcher's second search. Countries missing here fall back to their
+// Wikipedia edition above; English-speaking ones get no second search.
+const LOCAL_SEARCH = {
+  ht: "fr", sn: "fr", ci: "fr", cm: "fr", cf: "fr", bj: "fr", tg: "fr", gn: "fr", mg: "fr", be: "fr", lu: "fr",
+  mm: "my", et: "am", er: "ar", br: "pt", ao: "pt", mz: "pt", pt: "pt", gw: "pt", vn: "vi", th: "th", la: "lo", kh: "km",
+  id: "id", my: "ms", bd: "bn", np: "ne", lk: "si", kz: "ru", kg: "ru", tj: "ru", uz: "ru", tm: "ru", md: "ro", ro: "ro",
+  rs: "sr", ba: "sr", me: "sr", hr: "hr", mk: "mk", al: "sq", xk: "sq", bg: "bg", hu: "hu", cz: "cs", sk: "sk",
+  nl: "nl", se: "sv", no: "no", fi: "fi", dk: "da", ee: "et", lv: "lv", lt: "lt", mn: "mn", ar: "es", cl: "es",
+  pe: "es", bo: "es", ec: "es", py: "es", uy: "es", pa: "es", gt: "es", hn: "es", sv: "es", ni: "es", cr: "es", do: "es",
+};
+const LANGUAGE_NAMES = {
+  ar: ["Arabic", "ערבית"], he: ["Hebrew", "עברית"], fa: ["Persian", "פרסית"], ru: ["Russian", "רוסית"], uk: ["Ukrainian", "אוקראינית"],
+  tr: ["Turkish", "טורקית"], zh: ["Chinese", "סינית"], ja: ["Japanese", "יפנית"], ko: ["Korean", "קוריאנית"], ur: ["Urdu", "אורדו"],
+  hi: ["Hindi", "הינדי"], fr: ["French", "צרפתית"], de: ["German", "גרמנית"], es: ["Spanish", "ספרדית"], it: ["Italian", "איטלקית"],
+  pl: ["Polish", "פולנית"], el: ["Greek", "יוונית"], hy: ["Armenian", "ארמנית"], az: ["Azerbaijani", "אזרית"], ka: ["Georgian", "גאורגית"],
+  my: ["Burmese", "בורמזית"], am: ["Amharic", "אמהרית"], pt: ["Portuguese", "פורטוגזית"], vi: ["Vietnamese", "וייטנאמית"],
+  th: ["Thai", "תאית"], lo: ["Lao", "לאית"], km: ["Khmer", "חמרית"], id: ["Indonesian", "אינדונזית"], ms: ["Malay", "מלאית"],
+  bn: ["Bengali", "בנגלית"], ne: ["Nepali", "נפאלית"], si: ["Sinhala", "סינהלית"], ro: ["Romanian", "רומנית"], sr: ["Serbian", "סרבית"],
+  hr: ["Croatian", "קרואטית"], mk: ["Macedonian", "מקדונית"], sq: ["Albanian", "אלבנית"], bg: ["Bulgarian", "בולגרית"],
+  hu: ["Hungarian", "הונגרית"], cs: ["Czech", "צ'כית"], sk: ["Slovak", "סלובקית"], nl: ["Dutch", "הולנדית"], sv: ["Swedish", "שוודית"],
+  no: ["Norwegian", "נורווגית"], fi: ["Finnish", "פינית"], da: ["Danish", "דנית"], et: ["Estonian", "אסטונית"], lv: ["Latvian", "לטבית"],
+  lt: ["Lithuanian", "ליטאית"], mn: ["Mongolian", "מונגולית"],
+};
+
+// { code, name, nameHe } of the local language for a country, or null for English / unknown.
+export function localLanguage(countryCode) {
+  const code = LOCAL_SEARCH[countryCode] || LOCAL_WIKI[countryCode];
+  if (!code || !LANGUAGE_NAMES[code]) return null;
+  return { code, name: LANGUAGE_NAMES[code][0], nameHe: LANGUAGE_NAMES[code][1] };
+}
+
 // Words that mark a site, an organisation or an event as security-related.
 const SECURITY = /military|army|air ?base|airbase|air force|airport|airfield|aerodrome|naval|navy|barracks|garrison|fortress|\bfort\b|\bbase\b|\bport\b|harbou?r|power (station|plant)|refinery|oil field|gas field|\bdam\b|border|checkpoint|crossing|prison|detention|refugee camp|radar|missile|headquarters|bunker|depot|arsenal|nuclear|militia|armed|insurgen|paramilitary|peacekeep|hezbollah|houthi|hamas|wagner|irgc|unifil|عسكري|قاعدة|مطار|ميناء|ثكنة|حاجز|معبر|ميليشيا|حزب الله|الحوثي|военн|авиабаз|аэродром|гарнизон|військов|аеродром|צבא|בסיס|מוצב|מחנה|שדה תעופה|נמל|מחסום|מעבר גבול/i;
 const EVENT = /attack|strike|airstrike|air raid|bombing|battle|massacre|siege|clash|offensive|military operation|assassination|explosion|shootdown|ambush|shelling|raid|skirmish|incident|غارة|هجوم|معركة|قصف|اشتباك|مجزرة|удар|бой|битва|обстрел|атака|תקיפה|קרב|פיגוע|הפצצה/i;
