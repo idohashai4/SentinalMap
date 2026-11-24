@@ -13,6 +13,7 @@ import LayersPanel from "./LayersPanel";
 import LayerInfoPanel from "./LayerInfoPanel";
 import TranslationTool from "./TranslationTool";
 import ResearcherTool from "./ResearcherTool";
+import CoordinateJump from "./CoordinateJump";
 import LiveLayer from "./LiveLayer";
 import { flagUrl } from "@/lib/flags";
 import { createClusterGroup } from "@/lib/markerCluster";
@@ -492,6 +493,7 @@ export default function ThreatMap({
       <div className="relative w-fit ml-auto flex items-center gap-1 pointer-events-auto">
         <ResearcherTool ref={researcherRef} mapRef={mapRef} suppressDrawRef={suppressDrawRef} tileMode={tileMode} shapes={filteredShapes} pois={visiblePoints} placeLabels={placeLabels} />
         <TranslationTool mapRef={mapRef} suppressDrawRef={suppressDrawRef} />
+        <CoordinateJump mapRef={mapRef} researcherRef={researcherRef} />
       </div>
       </div>
 

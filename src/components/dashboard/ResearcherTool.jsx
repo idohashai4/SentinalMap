@@ -557,7 +557,20 @@ const ResearcherTool = forwardRef(function ResearcherTool({ mapRef, suppressDraw
     research(map, bounds, { shape: { geojson, label: shapeRow.label, layer: shapeRow.layer_name, notes } });
   };
 
-  useImperativeHandle(ref, () => ({ researchShape }));
+  // Research a single point (for example coordinates pasted from a post).
+  const researchPoint = (lat, lng) => {
+    const map = mapRef.current;
+    if (!map || loading) return;
+    const run = () => research(map, L.latLngBounds([lat, lng], [lat, lng]));
+    const target = L.latLng(lat, lng);
+    if (map.getCenter().distanceTo(target) < 5 && map.getZoom() >= 14) run();
+    else {
+      map.once("moveend", run);
+      map.flyTo(target, Math.max(map.getZoom(), 15), { duration: 0.8 });
+    }
+  };
+
+  useImperativeHandle(ref, () => ({ researchShape, researchPoint }));
 
   const close = () => {
     setResult(null);
