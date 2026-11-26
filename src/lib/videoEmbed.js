@@ -1,5 +1,5 @@
 // Turns a video link into something that plays inside the app.
-// Returns { type: "iframe", src, ratio } | { type: "video", src } | null.
+// Returns { type: "iframe", src, ratio } | { type: "video", src } | { type: "x", id } | null.
 
 export function videoEmbed(rawUrl) {
   let url;
@@ -27,10 +27,10 @@ export function videoEmbed(rawUrl) {
     return id ? { type: "iframe", src: `https://player.vimeo.com/video/${id}`, ratio: "16 / 9" } : null;
   }
 
-  // X / Twitter post: the embedded post plays its video.
-  if (host === "x.com" || host === "twitter.com") {
+  // X / Twitter post: only its video is shown (see XVideo.jsx).
+  if (host === "x.com" || host === "twitter.com" || host === "fxtwitter.com" || host === "vxtwitter.com" || host === "fixupx.com") {
     const id = (path.match(/\/status(?:es)?\/(\d+)/) || [])[1];
-    return id ? { type: "iframe", src: `https://platform.twitter.com/embed/Tweet.html?id=${id}&theme=dark&dnt=true`, height: 560 } : null;
+    return id ? { type: "x", id } : null;
   }
 
   // Telegram public channel post

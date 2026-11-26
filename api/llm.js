@@ -6,6 +6,7 @@
 // token, which Vercel passes to every function invocation, so there is no API
 // key anywhere. Models come from the AI Gateway Free Tier list.
 import { generateText, Output, jsonSchema, gateway } from "ai";
+import { isAllowedUser } from "./_auth.js";
 
 // Free Tier models (vercel.com/ai-gateway/models?freeTier=true), tried in order.
 // Both read images (map screenshots) and return structured output.
@@ -17,26 +18,6 @@ const SEARCH_MODEL = process.env.AI_SEARCH_MODEL || "perplexity/sonar";
 
 const MAX_PROMPT = 60000;
 const MAX_IMAGES = 4;
-
-// This is a private app: only a signed-in user on the allow-list may spend AI
-// credits. The caller's Supabase token is checked by Supabase itself (an invalid
-// token is rejected there), and is_allowed() answers for that user's email.
-async function isAllowedUser(req) {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  const auth = req.headers.authorization || "";
-  if (!url || !anonKey || !auth.startsWith("Bearer ")) return false;
-  try {
-    const r = await fetch(`${url}/rest/v1/rpc/is_allowed`, {
-      method: "POST",
-      headers: { apikey: anonKey, Authorization: auth, "Content-Type": "application/json" },
-      body: "{}",
-    });
-    return r.ok && (await r.json()) === true;
-  } catch {
-    return false;
-  }
-}
 
 // Make the schema strict: every field required, no extra fields. Models follow
 // strict schemas far more reliably (looser ones made Gemini loop and cut off),

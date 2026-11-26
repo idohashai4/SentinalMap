@@ -2,6 +2,7 @@ import React from "react";
 import { base44 } from "@/api/base44Client";
 import { ExternalLink, Trash2 } from "lucide-react";
 import { videoEmbed } from "@/lib/videoEmbed";
+import XVideo from "./XVideo";
 
 export default function LayerNoteItem({ note, onDeleted }) {
   const remove = async () => {
@@ -40,6 +41,7 @@ export default function LayerNoteItem({ note, onDeleted }) {
 
           {note.kind === "video" && url && (() => {
             const embed = videoEmbed(url);
+            if (embed?.type === "x") return <XVideo id={embed.id} href={linkHref} title={note.title} />;
             if (embed?.type === "video") {
               return <video src={embed.src} controls preload="metadata" playsInline className="w-full rounded border border-white/10 bg-black max-h-72" />;
             }
