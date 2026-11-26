@@ -13,7 +13,6 @@ export const FLAGS = [
   { id: "druze", label: "הדרוזים", src: WM("Flag_of_Druze.svg") },
   { id: "hamas", label: "חמאס", src: WM("Flag_of_Hamas.svg") },
   { id: "hezbollah", label: "חיזבאללה", src: ENWP("Flag_of_Hezbollah.svg") },
-  { id: "houthis", label: "החות׳ים", src: WM("Slogan_of_the_Houthi_Movement.svg") },
   { id: "taliban", label: "טאליבן", src: WM("Flag_of_the_Taliban.svg") },
   { id: "isis", label: "דאעש", src: WM("Flag_of_the_Islamic_State_of_Iraq_and_the_Levant2.svg") },
   { id: "il", label: "ישראל" },
