@@ -1,6 +1,8 @@
 // Flags available as shape fills. Country flags come from flagcdn (ISO 3166-1
 // alpha-2 codes, plus "un"); non-state flags carry their own image URL.
 const WM = (file) => `https://commons.wikimedia.org/wiki/Special:FilePath/${file}?width=640`;
+// A few files live on English Wikipedia rather than on Commons.
+const ENWP = (file) => `https://en.wikipedia.org/wiki/Special:FilePath/${file}?width=640`;
 
 export const FLAGS = [
   { id: "un", label: "האו״ם" },
@@ -9,6 +11,11 @@ export const FLAGS = [
   { id: "somaliland", label: "סומלילנד", src: WM("Flag_of_Somaliland.svg") },
   { id: "kurdistan", label: "כורדיסטן", src: WM("Flag_of_Kurdistan.svg") },
   { id: "druze", label: "הדרוזים", src: WM("Flag_of_Druze.svg") },
+  { id: "hamas", label: "חמאס", src: WM("Flag_of_Hamas.svg") },
+  { id: "hezbollah", label: "חיזבאללה", src: ENWP("Flag_of_Hezbollah.svg") },
+  { id: "houthis", label: "החות׳ים", src: WM("Slogan_of_the_Houthi_Movement.svg") },
+  { id: "taliban", label: "טאליבן", src: WM("Flag_of_the_Taliban.svg") },
+  { id: "isis", label: "דאעש", src: WM("Flag_of_the_Islamic_State_of_Iraq_and_the_Levant2.svg") },
   { id: "il", label: "ישראל" },
   { id: "ps", label: "הרשות הפלסטינית" },
   { id: "us", label: "ארה״ב" },
