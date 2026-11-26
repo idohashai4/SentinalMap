@@ -6,7 +6,8 @@ import { Loader2, Plus } from "lucide-react";
 const KINDS = [
   { id: "text", label: "מלל" },
   { id: "link", label: "קישור" },
-  { id: "image", label: "תמונה" }
+  { id: "image", label: "תמונה" },
+  { id: "video", label: "סרטון" }
 ];
 
 export default function LayerNoteForm({ shapeId, layerName, onAdded }) {
@@ -66,7 +67,7 @@ export default function LayerNoteForm({ shapeId, layerName, onAdded }) {
       <input
         value={title}
         onChange={e => setTitle(e.target.value)}
-        placeholder={kind === "image" ? "כיתוב לתמונה..." : kind === "link" ? "שם הקישור..." : "כותרת (לא חובה)..."}
+        placeholder={kind === "image" ? "כיתוב לתמונה..." : kind === "video" ? "כיתוב לסרטון..." : kind === "link" ? "שם הקישור..." : "כותרת (לא חובה)..."}
         className={inputCls}
         dir="auto"
       />
@@ -85,7 +86,7 @@ export default function LayerNoteForm({ shapeId, layerName, onAdded }) {
           value={url}
           onChange={e => setUrl(e.target.value)}
           onKeyDown={e => e.key === "Enter" && submit()}
-          placeholder={kind === "image" ? "https://... כתובת התמונה" : "https://... כתובת הקישור"}
+          placeholder={kind === "image" ? "https://... כתובת התמונה" : kind === "video" ? "קישור ל-YouTube, X, Telegram, Vimeo או קובץ וידאו" : "https://... כתובת הקישור"}
           className={inputCls}
           dir="ltr"
         />

@@ -1,6 +1,7 @@
 import React from "react";
 import { base44 } from "@/api/base44Client";
 import { ExternalLink, Trash2 } from "lucide-react";
+import { videoEmbed } from "@/lib/videoEmbed";
 
 export default function LayerNoteItem({ note, onDeleted }) {
   const remove = async () => {
@@ -34,6 +35,41 @@ export default function LayerNoteItem({ note, onDeleted }) {
             >
               <ExternalLink className="w-3 h-3 shrink-0" />
               <span className="truncate">{note.title || url}</span>
+            </a>
+          )}
+
+          {note.kind === "video" && url && (() => {
+            const embed = videoEmbed(url);
+            if (embed?.type === "video") {
+              return <video src={embed.src} controls preload="metadata" playsInline className="w-full rounded border border-white/10 bg-black max-h-72" />;
+            }
+            if (embed?.type === "iframe") {
+              return (
+                <iframe
+                  src={embed.src}
+                  title={note.title || "סרטון"}
+                  loading="lazy"
+                  allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+                  allowFullScreen
+                  referrerPolicy="strict-origin-when-cross-origin"
+                  className="w-full rounded border border-white/10 bg-black"
+                  style={embed.ratio ? { aspectRatio: embed.ratio, maxHeight: "60vh" } : { height: embed.height }}
+                />
+              );
+            }
+            // A site that can't be played here: link to it instead.
+            return (
+              <a href={linkHref} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] font-mono text-cyan-400 hover:text-cyan-300 break-all" dir="ltr">
+                <ExternalLink className="w-3 h-3 shrink-0" />
+                <span className="truncate">{note.title || "פתח סרטון"}</span>
+              </a>
+            );
+          })()}
+
+          {note.kind === "video" && url && note.title && (
+            <a href={linkHref} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-1 text-[10px] font-mono text-white/40 hover:text-cyan-300">
+              <ExternalLink className="w-2.5 h-2.5" /> מקור
             </a>
           )}
 
