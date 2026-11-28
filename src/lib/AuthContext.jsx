@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "@/api/base44Client";
+import { clearCache, readAllowed, writeAllowed } from "@/lib/localCache";
 
 const AuthContext = createContext(null);
 
@@ -21,14 +22,23 @@ export const AuthProvider = ({ children }) => {
 
   const userId = session?.user?.id;
   useEffect(() => {
-    setIsAllowed(null);
-    if (!userId) return;
+    if (!userId) { setIsAllowed(null); return; }
+    // An account that was allowed last time opens straight away; the check runs
+    // in the background. The data itself is protected by the database either way.
+    setIsAllowed(readAllowed(userId) ? true : null);
     let cancelled = false;
-    supabase.rpc("is_allowed").then(({ data }) => { if (!cancelled) setIsAllowed(data === true); });
+    supabase.rpc("is_allowed").then(({ data, error }) => {
+      if (cancelled || error) return;
+      writeAllowed(userId, data === true);
+      setIsAllowed(data === true);
+    });
     return () => { cancelled = true; };
   }, [userId]);
 
-  const logout = () => supabase.auth.signOut();
+  const logout = () => {
+    clearCache();
+    return supabase.auth.signOut();
+  };
 
   return (
     <AuthContext.Provider value={{ user: session?.user || null, isAuthenticated: !!session, isAllowed, isLoadingAuth: isLoadingAuth || (!!session && isAllowed === null), logout }}>

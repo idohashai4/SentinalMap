@@ -153,10 +153,34 @@ export const base44 = {
 // refreshes the matching react-query cache (query keys start with the table name).
 const TABLES = ["points_of_interest", "poi_topics", "place_labels", "map_shapes", "layer_notes"];
 
+// Applies one live change to a cached list. Returns false when it can't.
+export function applyRowChange(queryClient, queryKey, change) {
+  const list = queryClient.getQueryData(queryKey);
+  if (!Array.isArray(list)) return false;
+  const row = change.new && change.new.id ? change.new : null;
+  const oldId = change.old?.id;
+  if (change.eventType === "INSERT" && row) {
+    queryClient.setQueryData(queryKey, [row, ...list.filter((r) => r.id !== row.id)]);
+    return true;
+  }
+  if (change.eventType === "UPDATE" && row) {
+    queryClient.setQueryData(queryKey, list.some((r) => r.id === row.id) ? list.map((r) => (r.id === row.id ? row : r)) : [row, ...list]);
+    return true;
+  }
+  if (change.eventType === "DELETE" && oldId) {
+    queryClient.setQueryData(queryKey, list.filter((r) => r.id !== oldId));
+    return true;
+  }
+  return false;
+}
+
 export function subscribeToChanges(queryClient) {
   const channel = supabase.channel("db-changes");
   for (const table of TABLES) {
-    channel.on("postgres_changes", { event: "*", schema: SCHEMA, table }, () => {
+    channel.on("postgres_changes", { event: "*", schema: SCHEMA, table }, (change) => {
+      // Shapes are the big list: apply the one changed row instead of
+      // downloading all of them again. Anything unexpected falls back to a refresh.
+      if (table === "map_shapes" && applyRowChange(queryClient, ["map_shapes"], change)) return;
       queryClient.invalidateQueries({ queryKey: [table] });
     });
   }

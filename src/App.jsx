@@ -1,7 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClientInstance } from "@/lib/query-client";
+import { connectQueryCache } from "@/lib/localCache";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import { isConfigured, subscribeToChanges } from "@/api/base44Client";
 import Dashboard from "./pages/Dashboard";
@@ -9,6 +10,15 @@ import Login from "./pages/Login";
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isAuthenticated, isAllowed, user, logout } = useAuth();
+  const disconnectRef = useRef(null);
+
+  // Open the map from the copy kept in this browser, then refresh it.
+  const userId = user?.id;
+  useMemo(() => {
+    if (userId) disconnectRef.current?.();
+    if (userId) disconnectRef.current = connectQueryCache(queryClientInstance, userId);
+  }, [userId]);
+  useEffect(() => () => disconnectRef.current?.(), []);
 
   // Live sync: changes saved from any browser show up here without a reload.
   useEffect(() => {

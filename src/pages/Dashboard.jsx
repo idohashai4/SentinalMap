@@ -105,8 +105,9 @@ export default function Dashboard() {
       });
       const layer = created.layer_name || "default";
       setVisibleLayers((prev) => (prev[layer] === false ? { ...prev, [layer]: true } : prev));
+    } else {
+      refreshShapes();
     }
-    refreshShapes();
   };
 
   const handleRevealLayer = (name) => {
@@ -119,19 +120,23 @@ export default function Dashboard() {
     }
   };
 
+  // The shapes list is updated in place: re-downloading every shape after each
+  // change is what made the map slow to settle.
+  const updateShapes = (fn) => queryClient.setQueryData(["map_shapes"], (prev) => fn(Array.isArray(prev) ? prev : []));
+
   const handleShapeDeleted = async (id) => {
     await base44.entities.map_shapes.delete(id);
-    refreshShapes();
+    updateShapes((list) => list.filter((s) => s.id !== id));
   };
 
   const handleShapeEdited = async (id, data) => {
-    await base44.entities.map_shapes.update(id, data);
-    refreshShapes();
+    const saved = await base44.entities.map_shapes.update(id, data);
+    updateShapes((list) => list.map((s) => (s.id === id ? { ...s, ...data, ...(saved || {}) } : s)));
   };
 
   const handleDeleteLayer = async (name) => {
     await base44.entities.map_shapes.deleteMany({ layer_name: name });
-    refreshShapes();
+    updateShapes((list) => list.filter((s) => (s.layer_name || "default") !== name));
   };
 
   const handleFocusLive = (item) => setFocusCoords({ lat: item.lat, lng: item.lon });
