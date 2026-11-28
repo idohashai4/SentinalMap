@@ -6,7 +6,11 @@ const url = import.meta.env.VITE_SUPABASE_URL;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 export const isConfigured = Boolean(url && anonKey);
-export const supabase = createClient(url || "http://localhost", anonKey || "missing");
+// SentinalMap's tables live in their own schema in the shared Supabase project.
+export const SCHEMA = "sentinel";
+export const supabase = createClient(url || "http://localhost", anonKey || "missing", {
+  db: { schema: SCHEMA },
+});
 
 function fail(error) {
   if (error) throw new Error(error.message || String(error));
@@ -152,7 +156,7 @@ const TABLES = ["points_of_interest", "poi_topics", "place_labels", "map_shapes"
 export function subscribeToChanges(queryClient) {
   const channel = supabase.channel("db-changes");
   for (const table of TABLES) {
-    channel.on("postgres_changes", { event: "*", schema: "public", table }, () => {
+    channel.on("postgres_changes", { event: "*", schema: SCHEMA, table }, () => {
       queryClient.invalidateQueries({ queryKey: [table] });
     });
   }

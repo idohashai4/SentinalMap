@@ -11,7 +11,8 @@ export async function isAllowedUser(req) {
   try {
     const r = await fetch(`${url}/rest/v1/rpc/is_allowed`, {
       method: "POST",
-      headers: { apikey: anonKey, Authorization: auth, "Content-Type": "application/json" },
+      // is_allowed() lives in the app's own schema, sentinel.
+      headers: { apikey: anonKey, Authorization: auth, "Content-Type": "application/json", "Content-Profile": "sentinel" },
       body: "{}",
     });
     return r.ok && (await r.json()) === true;
